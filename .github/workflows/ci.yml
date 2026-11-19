@@ -67,7 +67,7 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - name: Web client: types, tests, licences, build
+      - name: "Web client: types, tests, licences, build"
         working-directory: web
         run: |
           npm ci
