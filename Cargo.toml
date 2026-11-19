@@ -1,0 +1,19 @@
+[package]
+name = "ortus-core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Ortus core: storage, sign-in, policy, audit, search, admin, public API and web shell."
+repository = "https://github.com/Ortus-Sovereign-Cloud/ortus-core"
+publish = false
+
+[lib]
+name = "ortus_core"
+
+[[bin]]
+name = "ortus-core"
+path = "src/bin/ortus-core.rs"
+
+[dependencies]
+rust-web-server = "18.34"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
