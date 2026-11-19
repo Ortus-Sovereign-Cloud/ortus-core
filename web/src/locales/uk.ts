@@ -1,0 +1,35 @@
+import type { Messages } from "./en.js";
+
+const uk: Messages = {
+  "shell.apps": "Застосунки",
+  "shell.home": "Головна сторінка Ortus",
+  "shell.allApps": "Усі застосунки",
+  "shell.allAppsShort": "Усі",
+  "shell.skip": "Перейти до вмісту",
+  "language.label": "Мова",
+  "switcher.title": "Усі застосунки",
+  "switcher.find": "Знайти застосунок",
+  "switcher.count": { one: "{count} застосунок", few: "{count} застосунки", many: "{count} застосунків", other: "{count} застосунку" },
+  "switcher.empty": "Ще не встановлено жодного застосунку.",
+  "switcher.emptyHint": "Адміністратор може ввімкнути застосунки в розділі «Адміністрування».",
+  "switcher.noMatch": "Жоден застосунок не відповідає запиту «{query}».",
+  "switcher.loadFailed": "Не вдалося завантажити застосунки.",
+  "switcher.retry": "Спробувати ще раз",
+  "group.communicate": "Спілкування",
+  "group.organise": "Планування",
+  "group.create": "Створення та облік",
+  "group.organisation": "Організація",
+  "app.mail": "Пошта",
+  "app.chat": "Чат",
+  "app.calls": "Дзвінки",
+  "app.calendar": "Календар",
+  "app.tasks": "Завдання",
+  "app.people": "Люди",
+  "app.drive": "Диск",
+  "app.docs": "Документи",
+  "app.approvals": "Погодження",
+  "app.admin": "Адміністрування",
+  "app.settings": "Налаштування",
+};
+
+export default uk;

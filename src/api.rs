@@ -146,21 +146,57 @@ fn health_schema() -> Value {
     })
 }
 
+fn apps(_: &Request, _: &PathParams, _: &ConnectionInfo, _: &()) -> Response {
+    // No app exists yet; each one registers here when it is added.
+    ok(&json!({"apps": []}))
+}
+
+fn apps_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["apps"],
+        "properties": {"apps": {
+            "type": "array",
+            "description": "The apps that are installed and switched on, in display order.",
+            "items": {
+                "type": "object",
+                "required": ["id", "group", "path"],
+                "properties": {
+                    "id": {"type": "string", "description": "Stable id of the app, such as mail or calendar."},
+                    "group": {"type": "string", "enum": ["communicate", "organise", "create", "organisation"]},
+                    "path": {"type": "string", "description": "Where the app lives in the web client."}
+                }
+            }
+        }}
+    })
+}
+
 fn unknown(request: &Request, _: &PathParams, _: &ConnectionInfo, _: &()) -> Response {
     ApiError::not_found("There is no such API route.").response(request)
 }
 
 /// Every operation of the core API. Apps add their own.
 pub fn routes() -> Vec<Route> {
-    vec![Route {
-        method: Method::Get,
-        path: "/health",
-        id: "getHealth",
-        tag: "core",
-        summary: "Report that the server is up, and its version.",
-        response: health_schema,
-        handler: health,
-    }]
+    vec![
+        Route {
+            method: Method::Get,
+            path: "/health",
+            id: "getHealth",
+            tag: "core",
+            summary: "Report that the server is up, and its version.",
+            response: health_schema,
+            handler: health,
+        },
+        Route {
+            method: Method::Get,
+            path: "/apps",
+            id: "listApps",
+            tag: "core",
+            summary: "List the apps that are installed and switched on.",
+            response: apps_schema,
+            handler: apps,
+        },
+    ]
 }
 
 /// Registers `routes` on `app` under the prefix, and answers every other

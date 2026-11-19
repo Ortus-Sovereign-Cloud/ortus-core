@@ -1,0 +1,35 @@
+import type { Messages } from "./en.js";
+
+const pl: Messages = {
+  "shell.apps": "Aplikacje",
+  "shell.home": "Strona główna Ortus",
+  "shell.allApps": "Wszystkie aplikacje",
+  "shell.allAppsShort": "Wszystkie",
+  "shell.skip": "Przejdź do treści",
+  "language.label": "Język",
+  "switcher.title": "Wszystkie aplikacje",
+  "switcher.find": "Znajdź aplikację",
+  "switcher.count": { one: "{count} aplikacja", few: "{count} aplikacje", many: "{count} aplikacji", other: "{count} aplikacji" },
+  "switcher.empty": "Nie zainstalowano jeszcze żadnych aplikacji.",
+  "switcher.emptyHint": "Administrator może włączyć aplikacje w panelu administracyjnym.",
+  "switcher.noMatch": "Żadna aplikacja nie pasuje do „{query}”.",
+  "switcher.loadFailed": "Nie udało się wczytać aplikacji.",
+  "switcher.retry": "Spróbuj ponownie",
+  "group.communicate": "Komunikacja",
+  "group.organise": "Organizacja pracy",
+  "group.create": "Tworzenie i ewidencja",
+  "group.organisation": "Organizacja",
+  "app.mail": "Poczta",
+  "app.chat": "Czat",
+  "app.calls": "Rozmowy",
+  "app.calendar": "Kalendarz",
+  "app.tasks": "Zadania",
+  "app.people": "Osoby",
+  "app.drive": "Dysk",
+  "app.docs": "Dokumenty",
+  "app.approvals": "Akceptacje",
+  "app.admin": "Administracja",
+  "app.settings": "Ustawienia",
+};
+
+export default pl;

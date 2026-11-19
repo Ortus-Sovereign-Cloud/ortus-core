@@ -62,9 +62,28 @@ jobs:
             sleep 2
           done
           exit 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Web client: types, tests, licences, build
+        working-directory: web
+        run: |
+          npm ci
+          npx tsc --noEmit
+          npm test
+          node tools/licences.mjs
+          node tools/licences.mjs --selftest
+          npm run build
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
+      - name: Browser tests against the real program
+        working-directory: web
+        run: |
+          npx playwright install --with-deps chromium
+          npx playwright test
 
   licences:
     runs-on: ubuntu-latest

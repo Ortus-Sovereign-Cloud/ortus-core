@@ -1,0 +1,35 @@
+import type { Messages } from "./en.js";
+
+const ar: Messages = {
+  "shell.apps": "التطبيقات",
+  "shell.home": "الصفحة الرئيسية لـ Ortus",
+  "shell.allApps": "كل التطبيقات",
+  "shell.allAppsShort": "الكل",
+  "shell.skip": "انتقل إلى المحتوى",
+  "language.label": "اللغة",
+  "switcher.title": "كل التطبيقات",
+  "switcher.find": "ابحث عن تطبيق",
+  "switcher.count": { zero: "لا تطبيقات", one: "تطبيق واحد", two: "تطبيقان", few: "{count} تطبيقات", many: "{count} تطبيقًا", other: "{count} تطبيق" },
+  "switcher.empty": "لم يُثبَّت أي تطبيق بعد.",
+  "switcher.emptyHint": "يمكن للمسؤول تفعيل التطبيقات من قسم الإدارة.",
+  "switcher.noMatch": "لا يوجد تطبيق يطابق «{query}».",
+  "switcher.loadFailed": "تعذّر تحميل التطبيقات.",
+  "switcher.retry": "أعد المحاولة",
+  "group.communicate": "التواصل",
+  "group.organise": "التنظيم",
+  "group.create": "الإنشاء والحفظ",
+  "group.organisation": "المؤسسة",
+  "app.mail": "البريد",
+  "app.chat": "المحادثة",
+  "app.calls": "المكالمات",
+  "app.calendar": "التقويم",
+  "app.tasks": "المهام",
+  "app.people": "الأشخاص",
+  "app.drive": "الملفات",
+  "app.docs": "المستندات",
+  "app.approvals": "الموافقات",
+  "app.admin": "الإدارة",
+  "app.settings": "الإعدادات",
+};
+
+export default ar;

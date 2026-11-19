@@ -52,6 +52,78 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/apps": {
+      "get": {
+        "operationId": "listApps",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "apps": {
+                      "description": "The apps that are installed and switched on, in display order.",
+                      "items": {
+                        "properties": {
+                          "group": {
+                            "enum": [
+                              "communicate",
+                              "organise",
+                              "create",
+                              "organisation"
+                            ],
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "Stable id of the app, such as mail or calendar.",
+                            "type": "string"
+                          },
+                          "path": {
+                            "description": "Where the app lives in the web client.",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "group",
+                          "path"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "apps"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "summary": "List the apps that are installed and switched on.",
+        "tags": [
+          "core"
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "getHealth",

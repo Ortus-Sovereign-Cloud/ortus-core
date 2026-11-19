@@ -11,6 +11,7 @@ pub mod jobs;
 pub mod program;
 pub mod runtime;
 pub mod storage;
+pub mod web;
 
 use rust_web_server::middleware::WithMiddleware;
 use rust_web_server::prelude::*;
@@ -20,9 +21,11 @@ use rust_web_server::state::AppWithState;
 /// Version of the core, as reported by the health check.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// The core application: the public API, with a request id on every
-/// request. Requests outside the API fall through to the rws built-ins,
-/// which include the plain `/healthz` probe.
+/// The core application: the public API and the web client, with a
+/// request id on every request. Nothing else is served, except the plain
+/// `/healthz` probe that rws provides.
 pub fn app() -> WithMiddleware<AppWithState<()>> {
-    api::register(App::with_state(()), &api::routes()).wrap(RequestIdLayer::new())
+    web::register(api::register(App::with_state(()), &api::routes()))
+        .wrap(RequestIdLayer::new())
+        .wrap(web::OnlyOrtusPaths)
 }

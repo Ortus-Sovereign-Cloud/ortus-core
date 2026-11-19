@@ -1,0 +1,41 @@
+/* Ortus design tokens and page-level styles. Dark theme only.
+   Layout uses logical properties (inline-start, inline-end) throughout,
+   so right-to-left languages mirror without separate rules. */
+@import "@fontsource-variable/geist/index.css";
+@import "@fontsource-variable/noto-sans-arabic/index.css";
+
+:root {
+  --ortus-bg: #0a0b10;
+  --ortus-bg-rail: #07080c;
+  --ortus-surface: #11131a;
+  --ortus-surface-2: #13151c;
+  --ortus-hover: #1e2230;
+  --ortus-line: #1e2129;
+  --ortus-line-strong: #2a2e3a;
+  --ortus-line-input: #333846;
+  --ortus-text: #eceef3;
+  --ortus-text-2: #c3c8d4;
+  --ortus-text-3: #9198a8;
+  --ortus-accent: #8ea2ff;
+  --ortus-teal: #4fd1c5;
+  --ortus-orange: #f5a35c;
+  --ortus-lime: #c6f06b;
+  --ortus-red: #ff7a6e;
+  --ortus-font: "Geist Variable", "Noto Sans Arabic Variable", system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ortus-bg);
+  color: var(--ortus-text);
+  font-family: var(--ortus-font);
+  font-size: 14px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+}

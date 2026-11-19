@@ -54,14 +54,21 @@ fn start(roles: &str) -> Program {
 }
 
 fn health(port: u16) -> Option<String> {
+    get(port, "/api/v1/health")
+}
+
+fn get(port: u16, path: &str) -> Option<String> {
     let mut stream = TcpStream::connect(("127.0.0.1", port)).ok()?;
     stream.set_read_timeout(Some(Duration::from_secs(5))).ok()?;
     stream
-        .write_all(b"GET /api/v1/health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        .write_all(
+            format!("GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+                .as_bytes(),
+        )
         .ok()?;
-    let mut response = String::new();
-    let _ = stream.read_to_string(&mut response);
-    Some(response)
+    let mut response = Vec::new();
+    let _ = stream.read_to_end(&mut response);
+    Some(String::from_utf8_lossy(&response).into_owned())
 }
 
 /// Waits until the program has finished starting: its database file is
@@ -152,5 +159,41 @@ fn a_wrong_setting_stops_the_program_with_its_name() {
     assert!(
         !program.dir.join("data").exists(),
         "nothing is created before the settings are checked"
+    );
+}
+
+#[test]
+fn the_database_and_other_files_beside_the_program_are_not_served() {
+    let mut program = start("web");
+    wait_for_health(&mut program);
+    assert!(program.dir.join("data/ortus.db").exists());
+    std::fs::write(
+        program.dir.join("ortus.toml"),
+        "[database]\nurl = \"postgres://ortus:hunter2@db/ortus\"\n",
+    )
+    .unwrap();
+    for path in [
+        "/data/ortus.db",
+        "/ortus.toml",
+        "/data/",
+        "/api/../ortus.toml",
+        "/assets/../ortus.toml",
+        "/assets/%2e%2e/ortus.toml",
+    ] {
+        let response = get(program.port, path).unwrap_or_default();
+        assert!(
+            response.starts_with("HTTP/1.1 404") || response.starts_with("HTTP/1.1 400"),
+            "{path}: {}",
+            response.lines().next().unwrap_or_default()
+        );
+        assert!(
+            !response.contains("hunter2") && !response.contains("SQLite format"),
+            "{path} leaked a file"
+        );
+    }
+    let page = get(program.port, "/").unwrap();
+    assert!(
+        page.starts_with("HTTP/1.1 200") && page.contains("<ortus-shell>"),
+        "the web client is served"
     );
 }

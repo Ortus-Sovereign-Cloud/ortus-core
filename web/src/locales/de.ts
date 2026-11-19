@@ -1,0 +1,35 @@
+import type { Messages } from "./en.js";
+
+const de: Messages = {
+  "shell.apps": "Apps",
+  "shell.home": "Ortus-Startseite",
+  "shell.allApps": "Alle Apps",
+  "shell.allAppsShort": "Alle Apps",
+  "shell.skip": "Zum Inhalt springen",
+  "language.label": "Sprache",
+  "switcher.title": "Alle Apps",
+  "switcher.find": "App suchen",
+  "switcher.count": { one: "{count} App", other: "{count} Apps" },
+  "switcher.empty": "Es sind noch keine Apps installiert.",
+  "switcher.emptyHint": "Ein Administrator kann Apps in der Verwaltung einschalten.",
+  "switcher.noMatch": "Keine App passt zu „{query}“.",
+  "switcher.loadFailed": "Die Apps konnten nicht geladen werden.",
+  "switcher.retry": "Erneut versuchen",
+  "group.communicate": "Kommunikation",
+  "group.organise": "Organisieren",
+  "group.create": "Erstellen und Ablegen",
+  "group.organisation": "Organisation",
+  "app.mail": "E-Mail",
+  "app.chat": "Chat",
+  "app.calls": "Anrufe",
+  "app.calendar": "Kalender",
+  "app.tasks": "Aufgaben",
+  "app.people": "Personen",
+  "app.drive": "Dateien",
+  "app.docs": "Dokumente",
+  "app.approvals": "Freigaben",
+  "app.admin": "Verwaltung",
+  "app.settings": "Einstellungen",
+};
+
+export default de;

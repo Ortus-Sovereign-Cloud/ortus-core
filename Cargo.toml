@@ -23,3 +23,4 @@ opendal = { version = "0.59", default-features = false, features = ["services-fs
 serde = { version = "1.0.229", features = ["derive"] }
 toml = "1.2.1"
 serde_json = "1.0.154"
+rust-embed = "8.14.0"
