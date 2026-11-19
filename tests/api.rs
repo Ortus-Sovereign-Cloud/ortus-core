@@ -16,7 +16,7 @@ fn health_answers_under_the_versioned_prefix() {
         .send();
     assert_eq!(200, response.status());
     assert_eq!(Some("application/json"), response.header("Content-Type"));
-    let body = json(&response.body_text());
+    let body = json(response.body_text());
     assert_eq!("ok", body["status"]);
     assert_eq!(ortus_core::VERSION, body["version"]);
 }
@@ -70,7 +70,7 @@ fn unknown_api_paths_get_the_error_format_for_every_method() {
     ];
     for response in responses {
         assert_eq!(404, response.status());
-        let body = json(&response.body_text());
+        let body = json(response.body_text());
         assert_eq!("not_found", body["error"]["code"]);
         assert_eq!("req-42", body["error"]["request_id"]);
         assert!(body["error"]["message"]
@@ -85,7 +85,7 @@ fn an_error_without_a_caller_id_reports_the_generated_one() {
     let response = TestClient::new(ortus_core::app())
         .get("/api/v1/nothing")
         .send();
-    let body = json(&response.body_text());
+    let body = json(response.body_text());
     let id = response.header("X-Request-Id").expect("a generated id");
     assert_eq!(id, body["error"]["request_id"].as_str().unwrap());
     assert!(!id.is_empty());
