@@ -5,6 +5,7 @@
 //! answers the health check of the public API.
 
 pub mod files;
+pub mod jobs;
 pub mod storage;
 
 use rust_web_server::prelude::*;
