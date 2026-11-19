@@ -1,118 +1,160 @@
 //! The PostgreSQL engine, used by the Kubernetes chart.
 
 use std::error::Error;
-use std::sync::{Condvar, Mutex};
+use std::sync::{Arc, Mutex};
 
-use postgres::error::SqlState;
-use postgres::types::{to_sql_checked, IsNull, ToSql, Type};
-use postgres::{Client, NoTls};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio_postgres::error::SqlState;
+use tokio_postgres::types::{to_sql_checked, IsNull, ToSql, Type};
+use tokio_postgres::{Client, NoTls};
 
-use super::{dialect, Engine, Row, Store, StoreError, StoreResult, Tx, Value};
+use super::{
+    dialect, AsyncStore, AsyncTransaction, AsyncTx, BoxFuture, Engine, Row, StoreError,
+    StoreResult, Value,
+};
+use crate::runtime;
 
 /// A PostgreSQL database, reached through a small pool of connections.
 pub struct PostgresStore {
+    pool: Arc<Pool>,
+}
+
+struct Pool {
     url: String,
     idle: Mutex<Vec<Client>>,
-    /// Connections that may still be opened; a transaction waits here when
-    /// the pool is fully in use.
-    free_slots: Mutex<usize>,
-    slot_freed: Condvar,
+    /// One permit per connection that may be in use; a transaction waits
+    /// here when the pool is fully in use.
+    permits: Arc<Semaphore>,
 }
 
 impl PostgresStore {
     /// Connects to the database at `url` (`postgres://user:pass@host/db`)
     /// with at most `max_connections` connections.
-    pub fn connect(url: &str, max_connections: usize) -> StoreResult<Self> {
-        let first = Client::connect(url, NoTls).map_err(error)?;
-        let max = max_connections.max(1);
+    pub async fn connect_async(url: &str, max_connections: usize) -> StoreResult<Self> {
+        let first = open(url).await?;
         Ok(Self {
-            url: url.to_string(),
-            idle: Mutex::new(vec![first]),
-            free_slots: Mutex::new(max - 1),
-            slot_freed: Condvar::new(),
+            pool: Arc::new(Pool {
+                url: url.to_string(),
+                idle: Mutex::new(vec![first]),
+                permits: Arc::new(Semaphore::new(max_connections.max(1))),
+            }),
         })
     }
 
-    fn checkout(&self) -> StoreResult<Client> {
-        loop {
-            if let Some(client) = self.idle.lock().unwrap_or_else(|p| p.into_inner()).pop() {
-                if !client.is_closed() {
-                    return Ok(client);
-                }
-                self.release_slot();
-                continue;
-            }
-            let mut free = self.free_slots.lock().unwrap_or_else(|p| p.into_inner());
-            if *free > 0 {
-                *free -= 1;
-                drop(free);
-                return Client::connect(&self.url, NoTls).map_err(|e| {
-                    self.release_slot();
-                    error(e)
-                });
-            }
-            // Every connection is in use: wait for one to come back.
-            let _unused = self
-                .slot_freed
-                .wait_timeout(free, std::time::Duration::from_millis(50))
-                .unwrap_or_else(|p| p.into_inner());
-        }
-    }
-
-    fn checkin(&self, client: Client) {
-        self.idle
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .push(client);
-        self.slot_freed.notify_one();
-    }
-
-    fn release_slot(&self) {
-        *self.free_slots.lock().unwrap_or_else(|p| p.into_inner()) += 1;
-        self.slot_freed.notify_one();
+    /// Blocking form of [`connect_async`](Self::connect_async).
+    pub fn connect(url: &str, max_connections: usize) -> StoreResult<Self> {
+        runtime::block_on(Self::connect_async(url, max_connections))
     }
 }
 
-impl Store for PostgresStore {
+async fn open(url: &str) -> StoreResult<Client> {
+    let (client, connection) = tokio_postgres::connect(url, NoTls).await.map_err(error)?;
+    // The connection does its work on the process-wide runtime, so it
+    // stays usable whichever runtime the caller is on.
+    runtime::io().spawn(connection);
+    Ok(client)
+}
+
+impl AsyncStore for PostgresStore {
     fn engine(&self) -> Engine {
         Engine::Postgres
     }
 
-    fn transaction(&self, work: &mut dyn FnMut(&mut dyn Tx) -> StoreResult<()>) -> StoreResult<()> {
-        let mut client = self.checkout()?;
-        let result = (|| {
-            let mut transaction = client.transaction().map_err(error)?;
-            work(&mut PostgresTx {
-                transaction: &mut transaction,
-            })?;
-            transaction.commit().map_err(error)
-        })();
-        // A dropped transaction rolls back, so the connection is clean
-        // either way and can serve the next caller.
-        self.checkin(client);
-        result
+    fn begin(&self) -> BoxFuture<'_, StoreResult<Box<dyn AsyncTransaction>>> {
+        Box::pin(async move {
+            let permit = Arc::clone(&self.pool.permits)
+                .acquire_owned()
+                .await
+                .map_err(|_| StoreError::Database("the connection pool is closed".into()))?;
+            let idle = self
+                .pool
+                .idle
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .pop();
+            let client = match idle {
+                Some(client) if !client.is_closed() => client,
+                _ => open(&self.pool.url).await?,
+            };
+            client.batch_execute("BEGIN").await.map_err(error)?;
+            Ok(Box::new(PostgresTransaction {
+                client: Some(client),
+                pool: Arc::clone(&self.pool),
+                _permit: permit,
+            }) as Box<dyn AsyncTransaction>)
+        })
     }
 }
 
-struct PostgresTx<'a, 'b> {
-    transaction: &'a mut postgres::Transaction<'b>,
+struct PostgresTransaction {
+    /// `None` once the transaction has ended. A transaction dropped while
+    /// this is still `Some` closes its connection, and the server rolls
+    /// the work back.
+    client: Option<Client>,
+    pool: Arc<Pool>,
+    _permit: OwnedSemaphorePermit,
 }
 
-impl Tx for PostgresTx<'_, '_> {
-    fn execute(&mut self, sql: &str, params: &[Value]) -> StoreResult<u64> {
-        let sql = dialect(sql, Engine::Postgres);
-        self.transaction
-            .execute(sql.as_str(), &refs(params))
-            .map_err(error)
+impl PostgresTransaction {
+    fn client(&self) -> StoreResult<&Client> {
+        self.client
+            .as_ref()
+            .ok_or_else(|| StoreError::Database("the transaction has ended".into()))
     }
 
-    fn query(&mut self, sql: &str, params: &[Value]) -> StoreResult<Vec<Row>> {
-        let sql = dialect(sql, Engine::Postgres);
-        let rows = self
-            .transaction
-            .query(sql.as_str(), &refs(params))
-            .map_err(error)?;
-        rows.iter().map(read_row).collect()
+    async fn end(mut self: Box<Self>, statement: &str) -> StoreResult<()> {
+        let Some(client) = self.client.take() else {
+            return Ok(());
+        };
+        client.batch_execute(statement).await.map_err(error)?;
+        self.pool
+            .idle
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .push(client);
+        Ok(())
+    }
+}
+
+impl AsyncTx for PostgresTransaction {
+    fn execute<'a>(
+        &'a mut self,
+        sql: &'a str,
+        params: &'a [Value],
+    ) -> BoxFuture<'a, StoreResult<u64>> {
+        Box::pin(async move {
+            let sql = dialect(sql, Engine::Postgres);
+            self.client()?
+                .execute(sql.as_str(), &refs(params))
+                .await
+                .map_err(error)
+        })
+    }
+
+    fn query<'a>(
+        &'a mut self,
+        sql: &'a str,
+        params: &'a [Value],
+    ) -> BoxFuture<'a, StoreResult<Vec<Row>>> {
+        Box::pin(async move {
+            let sql = dialect(sql, Engine::Postgres);
+            let rows = self
+                .client()?
+                .query(sql.as_str(), &refs(params))
+                .await
+                .map_err(error)?;
+            rows.iter().map(read_row).collect()
+        })
+    }
+}
+
+impl AsyncTransaction for PostgresTransaction {
+    fn commit(self: Box<Self>) -> BoxFuture<'static, StoreResult<()>> {
+        Box::pin(self.end("COMMIT"))
+    }
+
+    fn rollback(self: Box<Self>) -> BoxFuture<'static, StoreResult<()>> {
+        Box::pin(self.end("ROLLBACK"))
     }
 }
 
@@ -123,7 +165,7 @@ fn refs(params: &[Value]) -> Vec<&(dyn ToSql + Sync)> {
         .collect()
 }
 
-fn read_row(row: &postgres::Row) -> StoreResult<Row> {
+fn read_row(row: &tokio_postgres::Row) -> StoreResult<Row> {
     let mut values = Vec::with_capacity(row.len());
     for (index, column) in row.columns().iter().enumerate() {
         let ty = column.type_();
@@ -154,7 +196,7 @@ impl ToSql for Value {
     fn to_sql(
         &self,
         ty: &Type,
-        out: &mut postgres::types::private::BytesMut,
+        out: &mut tokio_postgres::types::private::BytesMut,
     ) -> Result<IsNull, Box<dyn Error + Sync + Send>> {
         match self {
             Value::Null => Ok(IsNull::Yes),
@@ -174,7 +216,7 @@ impl ToSql for Value {
     to_sql_checked!();
 }
 
-fn error(e: postgres::Error) -> StoreError {
+fn error(e: tokio_postgres::Error) -> StoreError {
     match e.code() {
         Some(code) if *code == SqlState::UNIQUE_VIOLATION => StoreError::Conflict(e.to_string()),
         _ => StoreError::Database(e.to_string()),

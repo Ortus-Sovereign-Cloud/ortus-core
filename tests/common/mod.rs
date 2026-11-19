@@ -8,12 +8,13 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
-use ortus_core::storage::{PostgresStore, SqliteStore, Store};
+use ortus_core::storage::blocking::on;
+use ortus_core::storage::{AsyncStore, PostgresStore, SqliteStore};
 
 /// Opens fresh, empty databases of one engine. Every call to `open`
 /// returns a new connection to the *same* database.
 pub struct Fresh {
-    pub open: Box<dyn Fn() -> Arc<dyn Store> + Send + Sync>,
+    pub open: Box<dyn Fn() -> Arc<dyn AsyncStore> + Send + Sync>,
     _dir: Option<tempdir::Dir>,
 }
 
@@ -69,8 +70,7 @@ pub fn postgres() -> Option<Fresh> {
         std::process::id(),
         NEXT.fetch_add(1, Ordering::SeqCst)
     );
-    PostgresStore::connect(&url, 1)
-        .unwrap()
+    on(&PostgresStore::connect(&url, 1).unwrap())
         .execute(&format!("CREATE SCHEMA {schema}"), &[])
         .unwrap();
     let separator = if url.contains('?') { '&' } else { '?' };

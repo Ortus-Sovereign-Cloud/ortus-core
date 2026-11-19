@@ -1,6 +1,6 @@
 //! The migration runner: brings a database to the schema the code expects.
 
-use super::{Engine, Store, StoreError, StoreResult, Tx, Value};
+use super::{AsyncStore, AsyncTx, Engine, StoreError, StoreResult, Value};
 
 /// One step in the history of an app's schema. Versions start at 1 and
 /// have no gaps. A migration that has been released is never edited.
@@ -28,8 +28,8 @@ const HISTORY_TABLE: &str = "CREATE TABLE IF NOT EXISTS ortus_migrations (
 /// failure the database is exactly as it was. Two programs that start at
 /// the same time do not migrate at once; the second waits and then finds
 /// nothing to do.
-pub fn migrate(
-    store: &dyn Store,
+pub async fn migrate(
+    store: &dyn AsyncStore,
     app: &str,
     migrations: &[Migration],
     now_ms: i64,
@@ -39,53 +39,63 @@ pub fn migrate(
             return Err(StoreError::Migration(format!("{app}: migration {} ({}) is at position {}; versions must be 1, 2, 3, ... with no gaps", migration.version, migration.name, index + 1)));
         }
     }
+    let mut tx = store.begin().await?;
+    // An error returns early and drops the transaction, which rolls back.
+    if store.engine() == Engine::Postgres {
+        // One migrator at a time across every program on this database.
+        tx.execute("SELECT pg_advisory_xact_lock(7310158203)", &[])
+            .await?;
+    }
+    tx.execute(HISTORY_TABLE, &[]).await?;
+    let done = history(&mut *tx, app).await?;
+    for (version, name) in &done {
+        match migrations.get(*version as usize - 1) {
+            Some(known) if known.name == name => {}
+            Some(known) => return Err(StoreError::Migration(format!("{app}: migration {version} was applied as '{name}' but the code calls it '{}'", known.name))),
+            None => return Err(StoreError::Migration(format!("{app}: the database is at migration {version} ('{name}'), newer than this program knows; upgrade the program"))),
+        }
+    }
     let mut applied = 0;
-    store.transaction(&mut |tx| {
-        applied = 0;
-        if store.engine() == Engine::Postgres {
-            // One migrator at a time across every program on this database.
-            tx.execute("SELECT pg_advisory_xact_lock(7310158203)", &[])?;
+    for migration in &migrations[done.len()..] {
+        for statement in statements(migration.sql) {
+            tx.execute(statement, &[]).await?;
         }
-        tx.execute(HISTORY_TABLE, &[])?;
-        let done = history(tx, app)?;
-        for (version, name) in &done {
-            match migrations.get(*version as usize - 1) {
-                Some(known) if known.name == name => {}
-                Some(known) => return Err(StoreError::Migration(format!("{app}: migration {version} was applied as '{name}' but the code calls it '{}'", known.name))),
-                None => return Err(StoreError::Migration(format!("{app}: the database is at migration {version} ('{name}'), newer than this program knows; upgrade the program"))),
-            }
-        }
-        for migration in &migrations[done.len()..] {
-            for statement in statements(migration.sql) {
-                tx.execute(statement, &[])?;
-            }
-            tx.execute("INSERT INTO ortus_migrations (app, version, name, applied_at) VALUES ($1, $2, $3, $4)", &[app.into(), migration.version.into(), migration.name.into(), now_ms.into()])?;
-            applied += 1;
-        }
-        Ok(())
-    })?;
+        tx.execute(
+            "INSERT INTO ortus_migrations (app, version, name, applied_at) VALUES ($1, $2, $3, $4)",
+            &[
+                app.into(),
+                migration.version.into(),
+                migration.name.into(),
+                now_ms.into(),
+            ],
+        )
+        .await?;
+        applied += 1;
+    }
+    tx.commit().await?;
     Ok(applied)
 }
 
 /// The versions of `app` already applied, oldest first.
-pub fn applied_versions(store: &dyn Store, app: &str) -> StoreResult<Vec<i64>> {
-    let mut versions = Vec::new();
-    store.transaction(&mut |tx| {
-        tx.execute(HISTORY_TABLE, &[])?;
-        versions = history(tx, app)?
-            .into_iter()
-            .map(|(version, _)| version)
-            .collect();
-        Ok(())
-    })?;
+pub async fn applied_versions(store: &dyn AsyncStore, app: &str) -> StoreResult<Vec<i64>> {
+    let mut tx = store.begin().await?;
+    tx.execute(HISTORY_TABLE, &[]).await?;
+    let versions = history(&mut *tx, app)
+        .await?
+        .into_iter()
+        .map(|(version, _)| version)
+        .collect();
+    tx.commit().await?;
     Ok(versions)
 }
 
-fn history(tx: &mut dyn Tx, app: &str) -> StoreResult<Vec<(i64, String)>> {
-    let rows = tx.query(
-        "SELECT version, name FROM ortus_migrations WHERE app = $1 ORDER BY version",
-        &[Value::from(app)],
-    )?;
+async fn history(tx: &mut dyn AsyncTx, app: &str) -> StoreResult<Vec<(i64, String)>> {
+    let rows = tx
+        .query(
+            "SELECT version, name FROM ortus_migrations WHERE app = $1 ORDER BY version",
+            &[Value::from(app)],
+        )
+        .await?;
     let mut done = Vec::with_capacity(rows.len());
     for (index, row) in rows.iter().enumerate() {
         let version = row.int(0).unwrap_or_default();

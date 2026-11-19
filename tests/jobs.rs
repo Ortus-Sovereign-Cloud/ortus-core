@@ -5,10 +5,12 @@ mod common;
 use std::sync::Arc;
 
 use common::{postgres, sqlite, Fresh};
-use ortus_core::jobs::{
-    claim, complete, enqueue, enqueue_in, fail, install, state, JobState, NewJob, Worker,
+use ortus_core::jobs::blocking::{
+    claim, complete, enqueue, enqueue_in, fail, install, state, tick,
 };
-use ortus_core::storage::{Store, StoreError, Value};
+use ortus_core::jobs::{JobState, NewJob, Worker};
+use ortus_core::storage::blocking::on;
+use ortus_core::storage::{AsyncStore, StoreError, Value};
 
 macro_rules! on_both_engines {
     ($($name:ident),* $(,)?) => {
@@ -38,10 +40,10 @@ fn job<'a>(id: &'a str, kind: &'a str) -> NewJob<'a> {
 }
 
 /// A database with the job table and a table that counts handler runs.
-fn open(db: &Fresh) -> Arc<dyn Store> {
+fn open(db: &Fresh) -> Arc<dyn AsyncStore> {
     let store = (db.open)();
     install(store.as_ref(), 0).unwrap();
-    store
+    on(&*store)
         .execute(
             "CREATE TABLE IF NOT EXISTS runs (job TEXT PRIMARY KEY, times BIGINT NOT NULL)",
             &[],
@@ -58,30 +60,33 @@ fn counting_worker(name: &str) -> Worker {
         .handle(
             "count",
             Box::new(|job, tx| {
-                let seen = tx
-                    .query(
-                        "SELECT times FROM runs WHERE job = $1",
-                        &[job.id.as_str().into()],
-                    )
-                    .map_err(|e| e.to_string())?;
-                match seen.first().and_then(|row| row.int(0)) {
-                    Some(times) => tx.execute(
-                        "UPDATE runs SET times = $1 WHERE job = $2",
-                        &[(times + 1).into(), job.id.as_str().into()],
-                    ),
-                    None => tx.execute(
-                        "INSERT INTO runs (job, times) VALUES ($1, 1)",
-                        &[job.id.as_str().into()],
-                    ),
-                }
-                .map(|_| ())
-                .map_err(|e| e.to_string())
+                Box::pin(async move {
+                    let id = [Value::from(job.id.as_str())];
+                    let seen = tx
+                        .query("SELECT times FROM runs WHERE job = $1", &id)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    let written = match seen.first().and_then(|row| row.int(0)) {
+                        Some(times) => {
+                            tx.execute(
+                                "UPDATE runs SET times = $1 WHERE job = $2",
+                                &[(times + 1).into(), job.id.as_str().into()],
+                            )
+                            .await
+                        }
+                        None => {
+                            tx.execute("INSERT INTO runs (job, times) VALUES ($1, 1)", &id)
+                                .await
+                        }
+                    };
+                    written.map(|_| ()).map_err(|e| e.to_string())
+                })
             }),
         )
 }
 
-fn runs(store: &dyn Store) -> Vec<(String, i64)> {
-    store
+fn runs(store: &dyn AsyncStore) -> Vec<(String, i64)> {
+    on(store)
         .query("SELECT job, times FROM runs ORDER BY job", &[])
         .unwrap()
         .iter()
@@ -109,19 +114,17 @@ fn a_job_survives_a_crash_and_runs_exactly_once(db: &Fresh) {
     let store = (db.open)();
     let worker = counting_worker("worker-b");
     assert!(
-        !worker.tick(store.as_ref(), 500).unwrap(),
+        !tick(&worker, store.as_ref(), 500).unwrap(),
         "the lease has not run out yet"
     );
     assert!(runs(store.as_ref()).is_empty());
-    assert!(worker.tick(store.as_ref(), 1_010).unwrap());
+    assert!(tick(&worker, store.as_ref(), 1_010).unwrap());
     assert_eq!(Some(JobState::Done), state(store.as_ref(), "j1").unwrap());
     assert_eq!(vec![("j1".to_string(), 1)], runs(store.as_ref()));
 
     // Nothing is left to run, however often workers look.
-    assert!(!worker.tick(store.as_ref(), 5_000).unwrap());
-    assert!(!counting_worker("worker-c")
-        .tick(store.as_ref(), 50_000)
-        .unwrap());
+    assert!(!tick(&worker, store.as_ref(), 5_000).unwrap());
+    assert!(!tick(&counting_worker("worker-c"), store.as_ref(), 50_000).unwrap());
 
     // The dead worker turns out to be only slow and finishes late: its
     // result is refused and its writes are not kept.
@@ -146,8 +149,8 @@ fn a_job_is_not_run_before_its_time(db: &Fresh) {
     )
     .unwrap();
     let worker = counting_worker("w");
-    assert!(!worker.tick(store.as_ref(), 999).unwrap());
-    assert!(worker.tick(store.as_ref(), 1_000).unwrap());
+    assert!(!tick(&worker, store.as_ref(), 999).unwrap());
+    assert!(tick(&worker, store.as_ref(), 1_000).unwrap());
     assert_eq!(vec![("later".to_string(), 1)], runs(store.as_ref()));
 }
 
@@ -156,11 +159,11 @@ fn the_same_id_is_one_job(db: &Fresh) {
     assert!(enqueue(store.as_ref(), &job("same", "count"), 0).unwrap());
     assert!(!enqueue(store.as_ref(), &job("same", "count"), 1).unwrap());
     let worker = counting_worker("w");
-    assert!(worker.tick(store.as_ref(), 10).unwrap());
-    assert!(!worker.tick(store.as_ref(), 20).unwrap());
+    assert!(tick(&worker, store.as_ref(), 10).unwrap());
+    assert!(!tick(&worker, store.as_ref(), 20).unwrap());
     // Adding it again after it ran still does not run it twice.
     assert!(!enqueue(store.as_ref(), &job("same", "count"), 30).unwrap());
-    assert!(!worker.tick(store.as_ref(), 40).unwrap());
+    assert!(!tick(&worker, store.as_ref(), 40).unwrap());
     assert_eq!(vec![("same".to_string(), 1)], runs(store.as_ref()));
     assert_eq!(None, state(store.as_ref(), "unknown").unwrap());
 }
@@ -168,34 +171,34 @@ fn the_same_id_is_one_job(db: &Fresh) {
 fn a_failing_job_is_retried_then_marked_failed(db: &Fresh) {
     let store = open(db);
     enqueue(store.as_ref(), &job("bad", "broken"), 0).unwrap();
-    let worker = Worker::new("w")
-        .lease_ms(1_000)
-        .retry_delay_ms(100)
-        .handle("broken", Box::new(|_, _| Err("no luck".into())));
-    assert!(worker.tick(store.as_ref(), 0).unwrap());
+    let worker = Worker::new("w").lease_ms(1_000).retry_delay_ms(100).handle(
+        "broken",
+        Box::new(|_, _| Box::pin(async { Err("no luck".into()) })),
+    );
+    assert!(tick(&worker, store.as_ref(), 0).unwrap());
     assert_eq!(
         Some(JobState::Queued),
         state(store.as_ref(), "bad").unwrap()
     );
     assert!(
-        !worker.tick(store.as_ref(), 99).unwrap(),
+        !tick(&worker, store.as_ref(), 99).unwrap(),
         "first retry waits 100 ms"
     );
-    assert!(worker.tick(store.as_ref(), 100).unwrap());
+    assert!(tick(&worker, store.as_ref(), 100).unwrap());
     assert!(
-        !worker.tick(store.as_ref(), 299).unwrap(),
+        !tick(&worker, store.as_ref(), 299).unwrap(),
         "second retry waits 200 ms"
     );
-    assert!(worker.tick(store.as_ref(), 300).unwrap());
+    assert!(tick(&worker, store.as_ref(), 300).unwrap());
     assert_eq!(
         Some(JobState::Failed),
         state(store.as_ref(), "bad").unwrap()
     );
     assert!(
-        !worker.tick(store.as_ref(), 1_000_000).unwrap(),
+        !tick(&worker, store.as_ref(), 1_000_000).unwrap(),
         "a failed job is not tried again"
     );
-    let row = &store
+    let row = &on(&*store)
         .query(
             "SELECT attempts, last_error FROM ortus_jobs WHERE id = 'bad'",
             &[],
@@ -237,23 +240,26 @@ fn a_failed_handler_leaves_no_writes_behind(db: &Fresh) {
     let worker = Worker::new("w").retry_delay_ms(100).handle(
         "half",
         Box::new(|job, tx| {
-            tx.execute(
-                "INSERT INTO runs (job, times) VALUES ($1, 1)",
-                &[job.id.as_str().into()],
-            )
-            .map_err(|e| e.to_string())?;
-            if job.attempt == 1 {
-                return Err("crashed halfway".into());
-            }
-            Ok(())
+            Box::pin(async move {
+                tx.execute(
+                    "INSERT INTO runs (job, times) VALUES ($1, 1)",
+                    &[job.id.as_str().into()],
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+                if job.attempt == 1 {
+                    return Err("crashed halfway".into());
+                }
+                Ok(())
+            })
         }),
     );
-    assert!(worker.tick(store.as_ref(), 0).unwrap());
+    assert!(tick(&worker, store.as_ref(), 0).unwrap());
     assert!(
         runs(store.as_ref()).is_empty(),
         "the first try's write must be rolled back"
     );
-    assert!(worker.tick(store.as_ref(), 100).unwrap());
+    assert!(tick(&worker, store.as_ref(), 100).unwrap());
     assert_eq!(vec![("half".to_string(), 1)], runs(store.as_ref()));
     assert_eq!(Some(JobState::Done), state(store.as_ref(), "half").unwrap());
 }
@@ -270,7 +276,7 @@ fn many_workers_run_every_job_once(db: &Fresh) {
             std::thread::spawn(move || {
                 let worker = counting_worker(&format!("worker-{n}"));
                 let mut done = 0;
-                while worker.tick(store.as_ref(), 10).unwrap() {
+                while tick(&worker, store.as_ref(), 10).unwrap() {
                     done += 1;
                 }
                 done
@@ -287,7 +293,7 @@ fn many_workers_run_every_job_once(db: &Fresh) {
     assert!(counted.iter().all(|(_, times)| *times == 1), "{counted:?}");
     assert_eq!(
         60,
-        store
+        on(&*store)
             .query("SELECT id FROM ortus_jobs WHERE state = 'done'", &[])
             .unwrap()
             .len()
@@ -296,7 +302,7 @@ fn many_workers_run_every_job_once(db: &Fresh) {
 
 fn a_job_enqueued_in_a_rolled_back_transaction_does_not_exist(db: &Fresh) {
     let store = open(db);
-    let result = store.transaction(&mut |tx| {
+    let result = on(&*store).transaction(&mut |tx| {
         assert!(enqueue_in(tx, &job("ghost", "count"), 0)?);
         tx.execute(
             "INSERT INTO runs (job, times) VALUES ($1, $2)",
@@ -306,5 +312,5 @@ fn a_job_enqueued_in_a_rolled_back_transaction_does_not_exist(db: &Fresh) {
     });
     assert!(result.is_err());
     assert_eq!(None, state(store.as_ref(), "ghost").unwrap());
-    assert!(!counting_worker("w").tick(store.as_ref(), 10).unwrap());
+    assert!(!tick(&counting_worker("w"), store.as_ref(), 10).unwrap());
 }

@@ -1914,10 +1914,10 @@ name = "ortus-core"
 version = "0.1.0"
 dependencies = [
  "opendal",
- "postgres",
  "rusqlite",
  "rust-web-server",
  "tokio",
+ "tokio-postgres",
 ]
 
 [[package]]
@@ -2092,20 +2092,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10ab3eb7f3becc3a1cbc4f2c6f20267996cfc1a6467a873763411b136a122715"
 dependencies = [
  "portable-atomic",
-]
-
-[[package]]
-name = "postgres"
-version = "0.19.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33ad20e0aa0b24f5a394eab4f78c781d248982b22b25cecc7e3aa46a681605bd"
-dependencies = [
- "bytes",
- "fallible-iterator 0.2.0",
- "futures-util",
- "log",
- "tokio",
- "tokio-postgres",
 ]
 
 [[package]]

@@ -10,12 +10,13 @@
 //!
 //! Files are read and written whole. Streaming of large files is not part
 //! of this interface yet.
+//!
+//! The interface is async. Code that is not async uses [`blocking::Files`].
 
 use std::fmt;
 use std::path::Path;
-use std::sync::OnceLock;
 
-use opendal::{blocking, options, services, ErrorKind, Operator};
+use opendal::{options, services, ErrorKind, Operator};
 
 /// A file-store failure.
 #[derive(Debug)]
@@ -55,33 +56,16 @@ pub struct S3Settings {
 
 /// A place to keep file contents.
 pub struct Files {
-    operator: blocking::Operator,
-}
-
-/// The runtime OpenDAL does its I/O on while callers block. There is one
-/// for the whole process and it is never shut down: the HTTP client behind
-/// S3 is shared process-wide and keeps its open connections on this
-/// runtime, so a runtime per store would break them when a store is dropped.
-fn runtime() -> FilesResult<&'static tokio::runtime::Runtime> {
-    static RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock::new();
-    RUNTIME
-        .get_or_init(|| {
-            tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(2)
-                .enable_all()
-                .thread_name("ortus-files")
-                .build()
-                .map_err(|e| e.to_string())
-        })
-        .as_ref()
-        .map_err(|e| FilesError::Store(format!("could not start the file runtime: {e}")))
+    operator: Operator,
 }
 
 impl Files {
     /// A store in the local directory `root`, created when missing.
     pub fn local(root: &Path) -> FilesResult<Self> {
         let builder = services::Fs::default().root(&root.to_string_lossy());
-        Self::build(Operator::new(builder).map_err(error)?)
+        Ok(Self {
+            operator: Operator::new(builder).map_err(error)?,
+        })
     }
 
     /// A store in an S3 bucket. The bucket must exist.
@@ -93,60 +77,69 @@ impl Files {
             .access_key_id(&settings.access_key)
             .secret_access_key(&settings.secret_key)
             .root(&format!("/{}", settings.root.trim_matches('/')));
-        Self::build(Operator::new(builder).map_err(error)?)
-    }
-
-    fn build(operator: Operator) -> FilesResult<Self> {
-        let _context = runtime()?.enter();
         Ok(Self {
-            operator: blocking::Operator::new(operator).map_err(error)?,
+            operator: Operator::new(builder).map_err(error)?,
         })
     }
 
     /// Stores `contents` under `key`, replacing what was there.
-    pub fn put(&self, key: &str, contents: &[u8]) -> FilesResult<()> {
-        self.operator
-            .write(check(key)?, contents.to_vec())
-            .map(|_| ())
-            .map_err(error)
+    pub async fn put(&self, key: &str, contents: &[u8]) -> FilesResult<()> {
+        let (operator, key, contents) = (
+            self.operator.clone(),
+            check(key)?.to_string(),
+            contents.to_vec(),
+        );
+        on_io(async move { operator.write(&key, contents).await.map(|_| ()) }).await
     }
 
     /// The contents under `key`, or `None` when there is no such file.
-    pub fn get(&self, key: &str) -> FilesResult<Option<Vec<u8>>> {
-        match self.operator.read(check(key)?) {
-            Ok(buffer) => Ok(Some(buffer.to_vec())),
-            Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(error(e)),
-        }
+    pub async fn get(&self, key: &str) -> FilesResult<Option<Vec<u8>>> {
+        let (operator, key) = (self.operator.clone(), check(key)?.to_string());
+        on_io(async move {
+            match operator.read(&key).await {
+                Ok(buffer) => Ok(Some(buffer.to_vec())),
+                Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
+                Err(e) => Err(e),
+            }
+        })
+        .await
     }
 
     /// Whether a file exists under `key`.
-    pub fn exists(&self, key: &str) -> FilesResult<bool> {
-        self.operator.exists(check(key)?).map_err(error)
+    pub async fn exists(&self, key: &str) -> FilesResult<bool> {
+        let (operator, key) = (self.operator.clone(), check(key)?.to_string());
+        on_io(async move { operator.exists(&key).await }).await
     }
 
     /// Removes the file under `key`. Removing a missing file is not an error.
-    pub fn delete(&self, key: &str) -> FilesResult<()> {
-        self.operator.delete(check(key)?).map_err(error)
+    pub async fn delete(&self, key: &str) -> FilesResult<()> {
+        let (operator, key) = (self.operator.clone(), check(key)?.to_string());
+        on_io(async move { operator.delete(&key).await }).await
     }
 
     /// The keys of every file under `prefix` (a key prefix ending in `/`,
     /// or empty for all files), sorted.
-    pub fn list(&self, prefix: &str) -> FilesResult<Vec<String>> {
+    pub async fn list(&self, prefix: &str) -> FilesResult<Vec<String>> {
         if !prefix.is_empty() {
             check(prefix.trim_end_matches('/'))?;
         }
-        let entries = match self.operator.list_options(
-            prefix,
-            options::ListOptions {
-                recursive: true,
-                ..Default::default()
-            },
-        ) {
-            Ok(entries) => entries,
-            Err(e) if e.kind() == ErrorKind::NotFound => Vec::new(),
-            Err(e) => return Err(error(e)),
-        };
+        let (operator, prefix) = (self.operator.clone(), prefix.to_string());
+        let entries = on_io(async move {
+            match operator
+                .list_options(
+                    &prefix,
+                    options::ListOptions {
+                        recursive: true,
+                        ..Default::default()
+                    },
+                )
+                .await
+            {
+                Err(e) if e.kind() == ErrorKind::NotFound => Ok(Vec::new()),
+                other => other,
+            }
+        })
+        .await?;
         let mut keys: Vec<String> = entries
             .into_iter()
             .filter(|entry| entry.metadata().is_file())
@@ -154,6 +147,78 @@ impl Files {
             .collect();
         keys.sort();
         Ok(keys)
+    }
+}
+
+/// Runs a store operation on the process-wide I/O runtime, whichever
+/// runtime the caller is on. The HTTP client behind S3 is shared by the
+/// whole process and keeps its open connections on the runtime that made
+/// them; were that a caller's own runtime, the connections would break
+/// when it shut down.
+async fn on_io<T: Send + 'static>(
+    work: impl std::future::Future<Output = opendal::Result<T>> + Send + 'static,
+) -> FilesResult<T> {
+    crate::runtime::io()
+        .spawn(work)
+        .await
+        .map_err(|e| FilesError::Store(format!("the file operation was cancelled: {e}")))?
+        .map_err(error)
+}
+
+/// The file interface for code that is not async. Do not call these from
+/// async code.
+pub mod blocking {
+    use std::path::Path;
+
+    use super::{FilesResult, S3Settings};
+    use crate::runtime::block_on;
+
+    /// A place to keep file contents, with calls that wait for the result.
+    pub struct Files {
+        inner: super::Files,
+    }
+
+    impl From<super::Files> for Files {
+        fn from(inner: super::Files) -> Self {
+            Self { inner }
+        }
+    }
+
+    impl Files {
+        /// See [`Files::local`](super::Files::local).
+        pub fn local(root: &Path) -> FilesResult<Self> {
+            super::Files::local(root).map(Self::from)
+        }
+
+        /// See [`Files::s3`](super::Files::s3).
+        pub fn s3(settings: &S3Settings) -> FilesResult<Self> {
+            super::Files::s3(settings).map(Self::from)
+        }
+
+        /// The async store underneath.
+        pub fn as_async(&self) -> &super::Files {
+            &self.inner
+        }
+
+        pub fn put(&self, key: &str, contents: &[u8]) -> FilesResult<()> {
+            block_on(self.inner.put(key, contents))
+        }
+
+        pub fn get(&self, key: &str) -> FilesResult<Option<Vec<u8>>> {
+            block_on(self.inner.get(key))
+        }
+
+        pub fn exists(&self, key: &str) -> FilesResult<bool> {
+            block_on(self.inner.exists(key))
+        }
+
+        pub fn delete(&self, key: &str) -> FilesResult<()> {
+            block_on(self.inner.delete(key))
+        }
+
+        pub fn list(&self, prefix: &str) -> FilesResult<Vec<String>> {
+            block_on(self.inner.list(prefix))
+        }
     }
 }
 

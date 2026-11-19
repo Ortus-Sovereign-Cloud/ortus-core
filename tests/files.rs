@@ -8,7 +8,8 @@
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use ortus_core::files::{Files, FilesError, S3Settings};
+use ortus_core::files::blocking::Files;
+use ortus_core::files::{FilesError, S3Settings};
 
 static NEXT: AtomicU32 = AtomicU32::new(0);
 
@@ -74,6 +75,7 @@ macro_rules! on_both_stores {
 }
 
 on_both_stores!(
+    async_calls_work_across_runtimes,
     contents_round_trip,
     missing_files_are_not_errors,
     put_replaces,
@@ -148,4 +150,29 @@ fn stores_do_not_see_each_other(files: &Files) {
     // the same key must not show up here.
     assert_eq!(None, files.get("doc").unwrap());
     assert!(files.list("").unwrap().is_empty());
+}
+
+fn async_calls_work_across_runtimes(files: &Files) {
+    let runtime = || {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap()
+    };
+    let files = files.as_async();
+    let first = runtime();
+    first.block_on(async {
+        files.put("a/one", b"1").await.unwrap();
+        assert_eq!(Some(b"1".to_vec()), files.get("a/one").await.unwrap());
+    });
+    drop(first);
+    // The caller's runtime is gone; the store's connections must not be.
+    runtime().block_on(async {
+        files.put("a/two", b"2").await.unwrap();
+        assert!(files.exists("a/one").await.unwrap());
+        assert_eq!(vec!["a/one", "a/two"], files.list("a/").await.unwrap());
+        files.delete("a/one").await.unwrap();
+        assert_eq!(None, files.get("a/one").await.unwrap());
+    });
 }
