@@ -4,6 +4,7 @@
 //! Apps (mail, drive, chat and the rest) will register with it; for now it
 //! answers the health check of the public API.
 
+pub mod files;
 pub mod storage;
 
 use rust_web_server::prelude::*;
