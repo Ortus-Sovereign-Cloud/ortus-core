@@ -1917,6 +1917,7 @@ dependencies = [
  "rusqlite",
  "rust-web-server",
  "serde",
+ "serde_json",
  "tokio",
  "tokio-postgres",
  "toml",

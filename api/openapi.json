@@ -1,0 +1,108 @@
+{
+  "components": {
+    "headers": {
+      "RequestId": {
+        "description": "Identifies this request in logs. Send your own to have it echoed back.",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "properties": {
+          "error": {
+            "properties": {
+              "code": {
+                "description": "Stable, machine-readable name of what went wrong.",
+                "type": "string"
+              },
+              "message": {
+                "description": "One sentence for a person.",
+                "type": "string"
+              },
+              "request_id": {
+                "description": "The X-Request-Id of the failed request.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "request_id"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "The public API of Ortus. The web client and the phone apps use exactly this API.",
+    "license": {
+      "identifier": "MIT OR Apache-2.0",
+      "name": "MIT OR Apache-2.0"
+    },
+    "title": "Ortus API",
+    "version": "v1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "version": {
+                      "description": "Version of the Ortus core.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "version"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "summary": "Report that the server is up, and its version.",
+        "tags": [
+          "core"
+        ]
+      }
+    }
+  }
+}
