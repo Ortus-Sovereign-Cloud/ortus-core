@@ -4,8 +4,10 @@
 //! Apps (mail, drive, chat and the rest) will register with it; for now it
 //! answers the health check of the public API.
 
+pub mod config;
 pub mod files;
 pub mod jobs;
+pub mod program;
 pub mod runtime;
 pub mod storage;
 

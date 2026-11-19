@@ -259,6 +259,11 @@ impl Worker {
 
     /// Runs at most one due job. Returns `false` when nothing was due.
     pub async fn tick(&self, store: &dyn AsyncStore, now_ms: i64) -> StoreResult<bool> {
+        if self.handlers.is_empty() {
+            // No handler could run what it took; an empty list of kinds
+            // would mean "any kind" to `claim`.
+            return Ok(false);
+        }
         let kinds: Vec<&str> = self.handlers.keys().map(String::as_str).collect();
         let Some(job) = claim(store, &self.name, &kinds, now_ms, self.lease_ms).await? else {
             return Ok(false);
