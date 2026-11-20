@@ -8,6 +8,7 @@ import { APP_ICONS, tileTints } from "../icons.js";
 import type { MessageKey } from "../locales/en.js";
 import "./ortus-app-switcher.js";
 import "./ortus-admin.js";
+import "./ortus-search.js";
 import "./ortus-settings.js";
 import "./ortus-welcome.js";
 import "./ortus-security.js";
@@ -316,6 +317,7 @@ export class OrtusShell extends LitElement {
       <main id="content" tabindex="-1">
         ${this.screen()}
       </main>
+      ${this.me ? html`<ortus-search></ortus-search>` : nothing}
     `;
   }
 
