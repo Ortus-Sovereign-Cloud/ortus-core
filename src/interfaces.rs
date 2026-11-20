@@ -201,6 +201,42 @@ pub trait Chat: Send + Sync {
         channel: &'a str,
         text: &'a str,
     ) -> BoxFuture<'a, Result<ItemRef, String>>;
+
+    /// A room as the person sees it, when they are in it (joined); `None`
+    /// when they are not or it does not exist.
+    fn room<'a>(
+        &'a self,
+        user: &'a str,
+        room: &'a str,
+    ) -> BoxFuture<'a, Result<Option<ChatRoom>, String>> {
+        let _ = (user, room);
+        Box::pin(async { Err("not supported".to_string()) })
+    }
+
+    /// A notice in a room from another app (a call started or ended):
+    /// `kind` names it ("ortus.call"), `about` is what it is about.
+    fn notice<'a>(
+        &'a self,
+        user: &'a str,
+        room: &'a str,
+        kind: &'a str,
+        about: &'a str,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        let _ = (user, room, kind, about);
+        Box::pin(async { Err("not supported".to_string()) })
+    }
+}
+
+/// A chat room as another app sees it.
+#[derive(Clone, Debug)]
+pub struct ChatRoom {
+    pub id: String,
+    pub name: String,
+    /// "channel", "private" or "direct".
+    pub kind: String,
+    pub encrypted: bool,
+    /// The user ids of the people in it (joined).
+    pub members: Vec<String>,
 }
 
 /// Provided by the tasks app; used by chat to turn a decision into a task.
