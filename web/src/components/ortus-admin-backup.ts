@@ -20,6 +20,23 @@ interface Summary {
   restorable: { app: string; what: string }[];
 }
 
+interface Webhook {
+  id: string;
+  name: string;
+  url: string;
+  events: string[];
+  lastOkAt: number | null;
+  lastError: string | null;
+  waiting: number;
+}
+
+interface Integrations {
+  webhooks: Webhook[];
+  events: string[];
+  directory: { host: string; lastSyncAt: number | null; lastResult: string | null } | null;
+  signIn: { name: string; host: string }[];
+}
+
 interface Person {
   id: string;
   name: string;
@@ -180,6 +197,119 @@ export class OrtusAdminBackup extends LitElement {
         font-size: 13px;
         cursor: pointer;
       }
+      .head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .head a.link {
+        text-decoration: none;
+        font-size: 14px;
+      }
+      .list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin: 0 0 16px;
+        padding: 0;
+        list-style: none;
+      }
+      .list li {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        border-radius: 12px;
+        background: var(--ortus-surface-2);
+      }
+      .badge {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex: none;
+        inline-size: 40px;
+        block-size: 40px;
+        border-radius: 10px;
+        background: var(--ortus-surface);
+        color: var(--ortus-accent);
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .about {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-inline-size: 0;
+      }
+      .about strong {
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .about span {
+        overflow: hidden;
+        color: var(--ortus-text-2);
+        font-size: 13px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .chip {
+        flex: none;
+        padding: 2px 8px;
+        border-radius: 6px;
+        background: var(--ortus-surface);
+        color: var(--ortus-text-2);
+        font-size: 13px;
+      }
+      .chip.on {
+        background: rgba(79, 209, 197, 0.14);
+        color: var(--ortus-teal);
+      }
+      .chip.bad {
+        background: rgba(255, 122, 110, 0.12);
+        color: var(--ortus-red);
+      }
+      .tools {
+        display: flex;
+        gap: 8px;
+      }
+      .secret code,
+      .check code {
+        font-family: var(--ortus-mono, ui-monospace, monospace);
+      }
+      .code {
+        margin: 16px 0 0;
+        padding: 16px;
+        overflow-x: auto;
+        border-radius: 12px;
+        border: 1px solid var(--ortus-line);
+        background: var(--ortus-bg);
+        font-family: var(--ortus-mono, ui-monospace, monospace);
+        font-size: 13px;
+        white-space: pre;
+      }
+      .add fieldset {
+        margin: 16px 0;
+        padding: 0;
+        border: 0;
+      }
+      .add legend {
+        margin-block-end: 8px;
+        color: var(--ortus-text-2);
+        font-size: 13px;
+      }
+      .check {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 4px 0;
+        color: var(--ortus-text);
+        font-size: 14px;
+      }
+      .check input {
+        inline-size: auto;
+        block-size: auto;
+      }
       @media (max-width: 720px) {
         .tiles {
           grid-template-columns: 1fr;
@@ -202,6 +332,11 @@ export class OrtusAdminBackup extends LitElement {
   @state() private error = "";
   @state() private restored: { name: string; path: string } | null = null;
   @state() private testing = false;
+  @state() private integrations: Integrations | null = null;
+  @state() private adding = false;
+  @state() private secret = "";
+  @state() private hookError = "";
+
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -220,10 +355,139 @@ export class OrtusAdminBackup extends LitElement {
       this.kind ||= first ? `${first.app}/${first.what}` : "";
       this.person ||= this.people[0]?.email ?? "";
       this.point ||= summary.points[0]?.name ?? "";
-      await this.loadChoices();
+      await Promise.all([this.loadChoices(), this.loadIntegrations()]);
     } catch (e) {
       this.error = e instanceof ApiError ? e.message : String(e);
     }
+  }
+
+  private async loadIntegrations(): Promise<void> {
+    try {
+      this.integrations = await call<Integrations>("GET", "/admin/integrations");
+    } catch {
+      this.integrations = null;
+    }
+  }
+
+  private initials(name: string): string {
+    const words = name.split(/\s+/).filter(Boolean);
+    return (words.length > 1 ? words.slice(0, 3).map((w) => w[0]) : [...(words[0] ?? "?").slice(0, 2)]).join("").toUpperCase();
+  }
+
+  private ago(at: number): string {
+    const minutes = Math.round((Date.now() - at) / 60_000);
+    const rtf = new Intl.RelativeTimeFormat(this.localize.lang, { numeric: "auto" });
+    if (minutes < 60) return rtf.format(-minutes, "minute");
+    if (minutes < 48 * 60) return rtf.format(-Math.round(minutes / 60), "hour");
+    return rtf.format(-Math.round(minutes / 1440), "day");
+  }
+
+  private async addHook(e: SubmitEvent): Promise<void> {
+    e.preventDefault();
+    const form = e.target as HTMLFormElement;
+    const data = new FormData(form);
+    this.hookError = "";
+    try {
+      const r = await call<{ secret: string; webhooks: Webhook[] }>("POST", "/admin/webhooks", {
+        name: String(data.get("name") ?? ""),
+        url: String(data.get("url") ?? ""),
+        events: data.getAll("events").map(String),
+      });
+      this.secret = r.secret;
+      if (this.integrations) this.integrations = { ...this.integrations, webhooks: r.webhooks };
+      this.adding = false;
+    } catch (err) {
+      this.hookError = err instanceof ApiError ? err.message : String(err);
+    }
+  }
+
+  private async removeHook(id: string): Promise<void> {
+    try {
+      const r = await call<{ webhooks: Webhook[] }>("DELETE", `/admin/webhooks/${encodeURIComponent(id)}`);
+      if (this.integrations) this.integrations = { ...this.integrations, webhooks: r.webhooks };
+    } catch (err) {
+      this.hookError = err instanceof ApiError ? err.message : String(err);
+    }
+  }
+
+  private async pingHook(id: string): Promise<void> {
+    try {
+      const r = await call<{ webhooks: Webhook[] }>("POST", `/admin/webhooks/${encodeURIComponent(id)}/ping`);
+      if (this.integrations) this.integrations = { ...this.integrations, webhooks: r.webhooks };
+    } catch (err) {
+      this.hookError = err instanceof ApiError ? err.message : String(err);
+    }
+  }
+
+  private integrationsCard() {
+    const i = this.integrations;
+    if (!i) return nothing;
+    const owner = this.me?.role === "owner";
+    const row = (badge: string, name: string, about: string, chip: unknown, more: unknown = nothing) =>
+      html`<li>
+        <span class="badge" aria-hidden="true">${badge}</span>
+        <div class="about"><strong>${name}</strong><span>${about}</span></div>
+        ${chip}${more}
+      </li>`;
+    const on = (text: string) => html`<span class="chip on">${text}</span>`;
+    const off = (text: string) => html`<span class="chip">${text}</span>`;
+    const bad = (text: string) => html`<span class="chip bad">${text}</span>`;
+    return html`<section class="card" aria-labelledby="integrations-title">
+      <div class="head">
+        <h2 id="integrations-title">${t(this.localize, "integrations.title")}</h2>
+        <a class="link" href="/api/v1/reference">${t(this.localize, "integrations.reference")}</a>
+      </div>
+      <ul class="list">
+        ${i.webhooks.map((h) =>
+          row(
+            this.initials(h.name),
+            h.name,
+            t(this.localize, "integrations.webhookAbout", { events: h.events.join(", ") }),
+            h.lastError ? bad(t(this.localize, "integrations.failing")) : h.lastOkAt ? on(t(this.localize, "integrations.connected")) : off(t(this.localize, "integrations.waiting")),
+            html`<span class="tools">
+              <button class="link" @click=${() => this.pingHook(h.id)}>${t(this.localize, "integrations.test")}</button>
+              ${owner ? html`<button class="link" aria-label=${t(this.localize, "integrations.removeNamed", { name: h.name })} @click=${() => this.removeHook(h.id)}>${t(this.localize, "integrations.remove")}</button>` : nothing}
+            </span>`,
+          ),
+        )}
+        ${row(
+          "HR",
+          t(this.localize, "integrations.directory"),
+          i.directory ? t(this.localize, "integrations.directoryAbout", { host: i.directory.host }) : t(this.localize, "integrations.directoryNone"),
+          i.directory?.lastSyncAt ? on(t(this.localize, "integrations.synced", { when: this.ago(i.directory.lastSyncAt) })) : off(t(this.localize, "integrations.off")),
+        )}
+        ${row(
+          "ID",
+          t(this.localize, "integrations.signIn"),
+          i.signIn.length ? i.signIn.map((p) => p.name).join(", ") : t(this.localize, "integrations.signInNone"),
+          i.signIn.length ? on(t(this.localize, "integrations.connected")) : off(t(this.localize, "integrations.off")),
+        )}
+        ${row("SMS", t(this.localize, "integrations.sms"), t(this.localize, "integrations.smsAbout"), off(t(this.localize, "integrations.off")))}
+      </ul>
+      ${this.secret
+        ? html`<p class="secret" role="status">${t(this.localize, "integrations.secret")} <code>${this.secret}</code></p>`
+        : nothing}
+      ${owner && !this.adding ? html`<button class="button" @click=${() => (this.adding = true)}>${t(this.localize, "integrations.add")}</button>` : nothing}
+      ${this.adding
+        ? html`<form class="add" @submit=${this.addHook}>
+            <label for="hook-name">${t(this.localize, "integrations.name")}</label>
+            <input id="hook-name" name="name" required maxlength="80" />
+            <label for="hook-url">${t(this.localize, "integrations.url")}</label>
+            <input id="hook-url" name="url" type="url" required placeholder="https://" />
+            <fieldset>
+              <legend>${t(this.localize, "integrations.events")}</legend>
+              ${i.events.map((e) => html`<label class="check"><input type="checkbox" name="events" value=${e} /> <code>${e}</code></label>`)}
+            </fieldset>
+            <div class="actions">
+              <button class="button primary" type="submit">${t(this.localize, "integrations.addButton")}</button>
+              <button class="button" type="button" @click=${() => (this.adding = false)}>${t(this.localize, "integrations.cancel")}</button>
+            </div>
+          </form>`
+        : nothing}
+      ${this.hookError ? html`<p class="error" role="alert">${this.hookError}</p>` : nothing}
+      <pre class="code" aria-label=${t(this.localize, "integrations.example")}><code>POST /api/v1/admin/webhooks
+{"name":"Case management system","url":"https://cases.example/hook","events":["record.filed","approval.done"]}</code></pre>
+    </section>`;
   }
 
   private async loadChoices(): Promise<void> {
@@ -391,7 +655,7 @@ export class OrtusAdminBackup extends LitElement {
 
   override render() {
     return html`<h1>${t(this.localize, "backup.title")}</h1>
-      <div class="grid">${this.restoreCard()}<slot name="integrations"></slot></div>`;
+      <div class="grid">${this.restoreCard()}${this.integrationsCard()}</div>`;
   }
 }
 

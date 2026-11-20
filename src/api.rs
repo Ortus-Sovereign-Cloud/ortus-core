@@ -624,6 +624,8 @@ pub fn routes() -> Vec<Route> {
     all.extend(crate::sovereignty::routes());
     all.extend(crate::notify::routes());
     all.extend(crate::points::routes());
+    all.extend(crate::webhooks::routes());
+    all.push(crate::webhooks::reference_route());
     all
 }
 

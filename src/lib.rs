@@ -34,6 +34,7 @@ pub mod services;
 pub mod sovereignty;
 pub mod storage;
 pub mod web;
+pub mod webhooks;
 
 use std::sync::Arc;
 
@@ -68,6 +69,7 @@ pub fn schemas() -> Vec<storage::Schema> {
         search::SCHEMA,
         notify::SCHEMA,
         points::SCHEMA,
+        webhooks::SCHEMA,
     ]
 }
 
@@ -87,6 +89,8 @@ pub const PERIODIC: &[(&str, i64)] = &[
     (retention::SWEEP_JOB, 24 * 60 * 60 * 1000),
     // Restore points: looks every ten minutes, takes one an hour.
     (points::JOB, 10 * 60 * 1000),
+    // Outgoing webhooks: new events handed out and posted.
+    (webhooks::JOB, 60 * 1000),
 ];
 
 /// Jobs of the core that run outside a transaction (long ones).
@@ -94,6 +98,7 @@ pub fn core_outside_jobs(instance: &Arc<Instance>) -> Vec<app::OutsideJobKind> {
     vec![
         points::job(Arc::clone(instance)),
         points::test_job(Arc::clone(instance)),
+        webhooks::job(Arc::clone(instance)),
     ]
 }
 

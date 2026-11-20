@@ -559,6 +559,48 @@
         ]
       }
     },
+    "/api/v1/admin/integrations": {
+      "get": {
+        "description": "For administrators and owners.",
+        "operationId": "integrations",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "What Ortus is connected to: outgoing webhooks (with their last delivery), the directory sync, outside sign-in providers; and the events a webhook can hear of.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/oidc/clients": {
       "get": {
         "description": "For administrators and owners.",
@@ -1691,6 +1733,132 @@
         "summary": "Invite many: CSV text, one per line: email,name[,role[,group;group]].",
         "tags": [
           "people"
+        ]
+      }
+    },
+    "/api/v1/admin/webhooks": {
+      "post": {
+        "description": "For owners.",
+        "operationId": "webhookAdd",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Adds an outgoing webhook: {name, url, events}; gives its signing secret once. Events: record.filed, approval.done, document.signed, task.created, person.invited, person.joined, person.removed, backup.restored.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/webhooks/:hook": {
+      "delete": {
+        "description": "For owners.",
+        "operationId": "webhookRemove",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Removes an outgoing webhook and what it had still to send.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/webhooks/:hook/ping": {
+      "post": {
+        "description": "For administrators and owners.",
+        "operationId": "webhookPing",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Sends the webhook a test post now; says whether it was taken.",
+        "tags": [
+          "admin"
         ]
       }
     },
@@ -3044,6 +3212,48 @@
         "summary": "Ask what the policy would answer: {action (share, link, forward, open_on_phone), label, to (an address, a domain, anyone, or absent for people here), channel, reason}. Records nothing.",
         "tags": [
           "policy"
+        ]
+      }
+    },
+    "/api/v1/reference": {
+      "get": {
+        "description": "For anyone signed in.",
+        "operationId": "reference",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "This installation's API reference (OpenAPI 3.1): the core's operations and its apps'.",
+        "tags": [
+          "meta"
         ]
       }
     },

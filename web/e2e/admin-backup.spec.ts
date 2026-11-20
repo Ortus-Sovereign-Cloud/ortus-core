@@ -68,6 +68,28 @@ test("one person's folder comes back into a new folder", async ({ page }) => {
   await page.screenshot({ path: "test-results/admin-backup.png" });
 });
 
+test("an owner adds a webhook, tests it and removes it", async ({ page }) => {
+  await page.goto("/admin/backup");
+  const card = page.locator("ortus-admin-backup").getByRole("region", { name: en["integrations.title"] });
+  await expect(card.getByText(en["integrations.sms"])).toBeVisible();
+  await expect(card.getByRole("link", { name: en["integrations.reference"] })).toHaveAttribute("href", "/api/v1/reference");
+  await card.getByRole("button", { name: en["integrations.add"] }).click();
+  await card.getByLabel(en["integrations.name"]).fill("Case management system");
+  // Nothing listens there: the test post is not taken.
+  await card.getByLabel(en["integrations.url"]).fill("http://127.0.0.1:9/hook");
+  await card.getByRole("checkbox", { name: "record.filed" }).check();
+  await card.getByRole("checkbox", { name: "approval.done" }).check();
+  await card.getByRole("button", { name: en["integrations.addButton"], exact: true }).click();
+  await expect(card.getByRole("status")).toContainText(en["integrations.secret"]);
+  const row = card.getByRole("listitem").filter({ hasText: "Case management system" });
+  await expect(row).toContainText("Webhooks: approval.done, record.filed");
+  await expect(row).toContainText(en["integrations.waiting"]);
+  await row.getByRole("button", { name: en["integrations.test"] }).click();
+  await expect(row).toContainText(en["integrations.failing"]);
+  await row.getByRole("button", { name: "Remove Case management system" }).click();
+  await expect(card.getByRole("listitem").filter({ hasText: "Case management system" })).toHaveCount(0);
+});
+
 for (const locale of LOCALES) {
   const catalog = CATALOGS[locale.code as Code];
   test(`backup and restore is in ${locale.name}`, async ({ page }) => {
@@ -76,6 +98,7 @@ for (const locale of LOCALES) {
     const screen = page.locator("ortus-admin-backup");
     await expect(screen.getByRole("heading", { level: 1 })).toHaveText(catalog["backup.title"] as string);
     await expect(screen.getByRole("heading", { level: 2, name: catalog["backup.restore"] as string })).toBeVisible();
+    await expect(screen.getByRole("heading", { level: 2, name: catalog["integrations.title"] as string })).toBeVisible();
     await expect(page.getByRole("link", { name: catalog["admin.backup"] as string })).toHaveAttribute("aria-current", "page");
     await expect(page.locator("html")).toHaveAttribute("dir", locale.dir);
   });
