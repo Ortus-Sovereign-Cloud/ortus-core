@@ -19,7 +19,10 @@ use std::path::Path;
 use crate::backup;
 use crate::config::Config;
 use crate::program::now_ms;
-use crate::storage::Schema;
+use std::sync::Arc;
+
+use crate::app::App;
+use crate::instance::schemas;
 
 /// Exit status for a command that was used wrongly or a bad configuration.
 pub const USAGE: i32 = 2;
@@ -38,12 +41,14 @@ const HELP: &str =
 Settings come from ORTUS_CONFIG (or ./ortus.toml) and ORTUS_* variables.";
 
 /// Runs the command in `args` (without the program name) for a program
-/// with these `schemas`, and returns the exit status.
-pub async fn run(name: &str, version: &str, schemas: &[Schema], args: &[String]) -> i32 {
+/// with these `apps`, and returns the exit status.
+pub async fn run(name: &str, version: &str, apps: Vec<Arc<dyn App>>, args: &[String]) -> i32 {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let all_schemas = schemas(&apps);
+    let schemas = all_schemas.as_slice();
     match args.as_slice() {
         [] | ["serve"] => with_config(|config| async move {
-            crate::program::run(config, schemas).await
+            crate::program::run(config, apps).await
         })
         .await,
         ["backup", dir] => with_config(|config| async move {

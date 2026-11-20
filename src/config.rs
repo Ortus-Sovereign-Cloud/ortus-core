@@ -16,6 +16,9 @@
 //! url = "postgres://ortus:secret@db/ortus"
 //! max_connections = 16
 //!
+//! [apps]
+//! off = ["chat"]               # apps that start switched off
+//!
 //! [files.s3]                   # omit for a directory in data_dir
 //! endpoint = "http://rustfs:9000"
 //! bucket = "ortus"
@@ -30,6 +33,7 @@
 //! | `ORTUS_DATA_DIR` | `data_dir` |
 //! | `ORTUS_WEB_IP`, `ORTUS_WEB_PORT` | `[web]` |
 //! | `ORTUS_DATABASE_URL`, `ORTUS_DATABASE_MAX_CONNECTIONS` | `[database]` |
+//! | `ORTUS_APPS_OFF` | `[apps] off`, comma separated |
 //! | `ORTUS_FILES_S3_ENDPOINT`, `_BUCKET`, `_REGION`, `_ACCESS_KEY`, `_SECRET_KEY`, `_ROOT` | `[files.s3]` |
 
 use std::collections::BTreeSet;
@@ -101,6 +105,8 @@ pub struct Config {
     pub web_port: u16,
     pub database: Database,
     pub files: FileStore,
+    /// Apps that are off until an administrator turns them on.
+    pub apps_off: Vec<String>,
 }
 
 /// A configuration that cannot be used, with the setting at fault.
@@ -126,6 +132,14 @@ struct FileConfig {
     database: DatabaseSection,
     #[serde(default)]
     files: FilesSection,
+    #[serde(default)]
+    apps: AppsSection,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AppsSection {
+    off: Option<Vec<String>>,
 }
 
 #[derive(Default, Deserialize)]
@@ -275,6 +289,14 @@ impl Config {
             _ => return Err(ConfigError("S3 file storage needs endpoint, bucket, access_key and secret_key; some are missing".into())),
         };
 
+        let apps_off = match env("ORTUS_APPS_OFF") {
+            Some(list) => list
+                .split(',')
+                .map(|id| id.trim().to_string())
+                .filter(|id| !id.is_empty())
+                .collect(),
+            None => file.apps.off.unwrap_or_default(),
+        };
         Ok(Self {
             roles,
             data_dir,
@@ -282,6 +304,7 @@ impl Config {
             web_port,
             database,
             files,
+            apps_off,
         })
     }
 
@@ -395,8 +418,11 @@ mod tests {
             bucket = "ortus"
             access_key = "key"
             secret_key = "secret"
+            [apps]
+            off = ["chat", "calls"]
         "#;
         let config = load(Some(file), &[]).unwrap();
+        assert_eq!(vec!["chat", "calls"], config.apps_off);
         assert_eq!(
             vec![Role::Web, Role::Worker],
             config.roles.iter().copied().collect::<Vec<_>>()
@@ -420,9 +446,11 @@ mod tests {
                 ("ORTUS_WEB_PORT", "9090"),
                 ("ORTUS_FILES_S3_BUCKET", "other"),
                 ("ORTUS_DATABASE_MAX_CONNECTIONS", "2"),
+                ("ORTUS_APPS_OFF", " drive ,,"),
             ],
         )
         .unwrap();
+        assert_eq!(vec!["drive"], config.apps_off);
         assert_eq!(
             vec![Role::Mail],
             config.roles.iter().copied().collect::<Vec<_>>()

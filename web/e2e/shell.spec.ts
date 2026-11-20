@@ -211,3 +211,22 @@ test("it fits a phone-width window without sideways scrolling", async ({ page })
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await page.screenshot({ path: "test-results/screens/shell-en-phone.png" });
 });
+
+test.describe("an address that belongs to no installed app", () => {
+  for (const locale of LOCALES) {
+    test(`says the app is not installed, in ${locale.name} (${locale.code})`, async ({ page }) => {
+      const errors = watchForErrors(page);
+      await page.goto("/");
+      await chooseLanguage(page, locale.code as Code);
+      await page.goto("/drive/some/file");
+      const catalog = CATALOGS[locale.code as Code];
+      await expect(page.getByRole("heading", { level: 1, name: catalog["notInstalled.title"] as string })).toBeVisible();
+      await expect(page.getByText((catalog["notInstalled.body"] as string).replace("{path}", "/drive/some/file"))).toBeVisible();
+      await expect(page.locator("html")).toHaveAttribute("dir", locale.dir);
+      await page.getByRole("link", { name: catalog["notInstalled.back"] as string }).click();
+      await expect(page).toHaveURL(/\/$/);
+      await expect(page.getByRole("heading", { level: 1, name: catalog["switcher.title"] as string })).toBeVisible();
+      expect(errors).toEqual([]);
+    });
+  }
+});

@@ -176,6 +176,34 @@ export class OrtusShell extends LitElement {
       min-inline-size: 0;
       overflow: auto;
     }
+    .missing {
+      max-inline-size: 520px;
+      margin-block: 120px;
+      margin-inline: auto;
+      padding-inline: 24px;
+    }
+    .missing h1 {
+      font-size: 22px;
+      font-weight: 600;
+      margin-block: 0 8px;
+    }
+    .missing p {
+      color: var(--ortus-text-2);
+      font-size: 15px;
+      line-height: 1.5;
+      margin-block: 0 20px;
+    }
+    .missing a {
+      display: inline-flex;
+      align-items: center;
+      block-size: 40px;
+      padding-inline: 16px;
+      border-radius: 10px;
+      background: var(--ortus-accent);
+      color: var(--ortus-bg);
+      font-weight: 600;
+      text-decoration: none;
+    }
   `,
   ];
 
@@ -220,7 +248,7 @@ export class OrtusShell extends LitElement {
           </svg>
         </a>
         ${(this.apps ?? []).slice(0, RAIL_APPS).map((app) => this.railItem(app))}
-        <a class="item" href="/" aria-current="page" aria-label=${t(this.localize, "shell.allApps")}>
+        <a class="item" href="/" aria-current=${location.pathname === "/" || location.pathname === "/apps" ? "page" : nothing} aria-label=${t(this.localize, "shell.allApps")}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <rect x="4" y="4" width="6" height="6" rx="1" />
             <rect x="14" y="4" width="6" height="6" rx="1" />
@@ -246,8 +274,33 @@ export class OrtusShell extends LitElement {
         </div>
       </nav>
       <main id="content" tabindex="-1">
-        <ortus-app-switcher .apps=${this.apps} .failed=${this.failed} @retry=${() => this.load()}></ortus-app-switcher>
+        ${this.screen()}
       </main>
+    `;
+  }
+
+  /** The app whose path the address is under, if it is installed. */
+  private current(): InstalledApp | undefined {
+    const path = location.pathname;
+    return (this.apps ?? []).find((app) => path === app.path || path.startsWith(`${app.path}/`));
+  }
+
+  private screen() {
+    const path = location.pathname;
+    if (path === "/" || path === "/apps" || this.apps === undefined) {
+      return html`<ortus-app-switcher .apps=${this.apps} .failed=${this.failed} @retry=${() => this.load()}></ortus-app-switcher>`;
+    }
+    const app = this.current();
+    const element = app ? `ortus-${app.id}-app` : "";
+    if (app && customElements.get(element)) {
+      return document.createElement(element);
+    }
+    return html`
+      <section class="missing" role="status">
+        <h1>${t(this.localize, "notInstalled.title")}</h1>
+        <p>${t(this.localize, "notInstalled.body", { path })}</p>
+        <a href="/">${t(this.localize, "notInstalled.back")}</a>
+      </section>
     `;
   }
 
@@ -255,7 +308,7 @@ export class OrtusShell extends LitElement {
     const icon = APP_ICONS[app.id];
     const name = t(this.localize, `app.${app.id}` as MessageKey);
     return html`
-      <a class="item" href=${app.path}>
+      <a class="item" href=${app.path} aria-current=${this.current()?.id === app.id ? "page" : nothing}>
         ${icon
           ? html`<span class="tile" data-app=${app.id} aria-hidden="true">
               ${svg`<svg width="17" height="17" viewBox="0 0 48 48">${unsafeSVG(icon.svg)}</svg>`}

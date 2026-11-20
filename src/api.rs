@@ -13,10 +13,16 @@
 //! {"error": {"code": "not_found", "message": "...", "request_id": "..."}}
 //! ```
 
+use std::sync::Arc;
+
+use rust_web_server::async_state::AsyncAppWithState;
 use rust_web_server::extract::{FromRequest, RequestId};
 use rust_web_server::prelude::*;
 use rust_web_server::response::StatusCodeReasonPhrase;
 use serde_json::{json, Map, Value};
+
+use crate::instance::Instance;
+use crate::storage::BoxFuture;
 
 /// Path prefix of the public API. A breaking change gets a new prefix.
 pub const PREFIX: &str = "/api/v1";
@@ -51,8 +57,15 @@ impl Method {
     }
 }
 
-/// A handler of the API.
-pub type Handler = fn(&Request, &PathParams, &ConnectionInfo, &()) -> Response;
+/// A handler of the API. It gets the request and the running installation:
+///
+/// ```ignore
+/// fn health(_: Request, _: PathParams, _: ConnectionInfo, ortus: Arc<Instance>) -> BoxFuture<'static, Response> {
+///     Box::pin(async move { ok(&json!({"status": "ok"})) })
+/// }
+/// ```
+pub type Handler =
+    fn(Request, PathParams, ConnectionInfo, Arc<Instance>) -> BoxFuture<'static, Response>;
 
 /// One operation of the API: where it is, what it does and what it
 /// answers. Paths are written without the prefix, as `/health`.
@@ -97,6 +110,15 @@ impl ApiError {
         }
     }
 
+    /// The app that would answer is not installed or is switched off.
+    pub fn not_installed(app: &str) -> Self {
+        Self {
+            status: 404,
+            code: "not_installed",
+            message: format!("The {app} app is not installed or is switched off."),
+        }
+    }
+
     pub fn internal() -> Self {
         Self {
             status: 500,
@@ -118,7 +140,11 @@ impl ApiError {
 fn status(code: u16) -> &'static StatusCodeReasonPhrase {
     match code {
         400 => STATUS_CODE_REASON_PHRASE.n400_bad_request,
+        401 => STATUS_CODE_REASON_PHRASE.n401_unauthorized,
+        403 => STATUS_CODE_REASON_PHRASE.n403_forbidden,
         404 => STATUS_CODE_REASON_PHRASE.n404_not_found,
+        409 => STATUS_CODE_REASON_PHRASE.n409_conflict,
+        429 => STATUS_CODE_REASON_PHRASE.n429_too_many_requests,
         _ => STATUS_CODE_REASON_PHRASE.n500_internal_server_error,
     }
 }
@@ -131,8 +157,13 @@ pub fn ok(body: &Value) -> Response {
     )
 }
 
-fn health(_: &Request, _: &PathParams, _: &ConnectionInfo, _: &()) -> Response {
-    ok(&json!({"status": "ok", "version": crate::VERSION}))
+fn health(
+    _: Request,
+    _: PathParams,
+    _: ConnectionInfo,
+    _: Arc<Instance>,
+) -> BoxFuture<'static, Response> {
+    Box::pin(async { ok(&json!({"status": "ok", "version": crate::VERSION})) })
 }
 
 fn health_schema() -> Value {
@@ -146,9 +177,21 @@ fn health_schema() -> Value {
     })
 }
 
-fn apps(_: &Request, _: &PathParams, _: &ConnectionInfo, _: &()) -> Response {
-    // No app exists yet; each one registers here when it is added.
-    ok(&json!({"apps": []}))
+fn apps(
+    _: Request,
+    _: PathParams,
+    _: ConnectionInfo,
+    ortus: Arc<Instance>,
+) -> BoxFuture<'static, Response> {
+    Box::pin(async move {
+        let apps: Vec<Value> = ortus
+            .apps_on()
+            .await
+            .iter()
+            .map(|app| json!({"id": app.id, "group": app.group.name(), "path": app.path}))
+            .collect();
+        ok(&json!({ "apps": apps }))
+    })
 }
 
 fn apps_schema() -> Value {
@@ -169,10 +212,6 @@ fn apps_schema() -> Value {
             }
         }}
     })
-}
-
-fn unknown(request: &Request, _: &PathParams, _: &ConnectionInfo, _: &()) -> Response {
-    ApiError::not_found("There is no such API route.").response(request)
 }
 
 /// Every operation of the core API. Apps add their own.
@@ -199,23 +238,47 @@ pub fn routes() -> Vec<Route> {
     ]
 }
 
-/// Registers `routes` on `app` under the prefix, and answers every other
-/// path under the prefix with a `not_found` error in the API's format.
+/// Registers the core's routes and every app's on `app` under the prefix,
+/// and answers every other path under the prefix with a `not_found` error
+/// in the API's format. An app's routes answer `not_installed` while the
+/// app is switched off.
 pub fn register(
-    mut app: rust_web_server::state::AppWithState<()>,
-    routes: &[Route],
-) -> rust_web_server::state::AppWithState<()> {
-    for route in routes {
+    mut app: AsyncAppWithState<Arc<Instance>>,
+    apps: &[Arc<dyn crate::app::App>],
+) -> AsyncAppWithState<Arc<Instance>> {
+    let mut all: Vec<(Option<&'static str>, Route)> =
+        routes().into_iter().map(|r| (None, r)).collect();
+    for owner in apps {
+        let id = owner.info().id;
+        all.extend(owner.routes().into_iter().map(|r| (Some(id), r)));
+    }
+    for (owner, route) in all {
         let path = format!("{PREFIX}{}", route.path);
+        let handler = route.handler;
+        let guarded = move |request: Request,
+                            params: PathParams,
+                            connection: ConnectionInfo,
+                            shared: Arc<Arc<Instance>>| async move {
+            let ortus: Arc<Instance> = Arc::clone(&*shared);
+            if let Some(id) = owner {
+                if !ortus.switches.is_on(id).await.unwrap_or(false) {
+                    return ApiError::not_installed(id).response(&request);
+                }
+            }
+            handler(request, params, connection, ortus).await
+        };
         app = match route.method {
-            Method::Get => app.get(&path, route.handler),
-            Method::Post => app.post(&path, route.handler),
-            Method::Put => app.put(&path, route.handler),
-            Method::Patch => app.patch(&path, route.handler),
-            Method::Delete => app.delete(&path, route.handler),
+            Method::Get => app.get(&path, guarded),
+            Method::Post => app.post(&path, guarded),
+            Method::Put => app.put(&path, guarded),
+            Method::Patch => app.patch(&path, guarded),
+            Method::Delete => app.delete(&path, guarded),
         };
     }
     let rest = format!("{PREFIX}/*rest");
+    let unknown = |request: Request, _: PathParams, _: ConnectionInfo, _: Arc<Arc<Instance>>| async move {
+        ApiError::not_found("There is no such API route.").response(&request)
+    };
     app.get(&rest, unknown)
         .post(&rest, unknown)
         .put(&rest, unknown)

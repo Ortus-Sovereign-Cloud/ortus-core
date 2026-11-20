@@ -264,14 +264,34 @@ impl Worker {
         self
     }
 
+    /// The kinds of job this worker has a handler for.
+    pub fn kinds(&self) -> Vec<&str> {
+        self.handlers.keys().map(String::as_str).collect()
+    }
+
     /// Runs at most one due job. Returns `false` when nothing was due.
     pub async fn tick(&self, store: &dyn AsyncStore, now_ms: i64) -> StoreResult<bool> {
-        if self.handlers.is_empty() {
+        self.tick_only(store, now_ms, &self.kinds()).await
+    }
+
+    /// Runs at most one due job of the given kinds (each one this worker
+    /// handles). Jobs of other kinds stay in the queue.
+    pub async fn tick_only(
+        &self,
+        store: &dyn AsyncStore,
+        now_ms: i64,
+        kinds: &[&str],
+    ) -> StoreResult<bool> {
+        let kinds: Vec<&str> = kinds
+            .iter()
+            .copied()
+            .filter(|kind| self.handlers.contains_key(*kind))
+            .collect();
+        if kinds.is_empty() {
             // No handler could run what it took; an empty list of kinds
             // would mean "any kind" to `claim`.
             return Ok(false);
         }
-        let kinds: Vec<&str> = self.handlers.keys().map(String::as_str).collect();
         let Some(job) = claim(store, &self.name, &kinds, now_ms, self.lease_ms).await? else {
             return Ok(false);
         };

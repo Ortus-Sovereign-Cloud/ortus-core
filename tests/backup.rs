@@ -277,13 +277,11 @@ fn a_damaged_backup_is_refused_before_anything_is_written() {
 fn a_backup_from_a_newer_program_or_with_unknown_parts_is_refused() {
     let (_, dir) = taken();
     let b = dir.0.join("b");
-    let older = vec![
-        ortus_core::jobs::SCHEMA,
-        Schema {
-            app: "test.notes",
-            migrations: &NOTES[..1],
-        },
-    ];
+    let mut older = ortus_core::schemas();
+    older.push(Schema {
+        app: "test.notes",
+        migrations: &NOTES[..1],
+    });
     assert!(message(backup::check(&b, &older)).contains("newer than this program"));
     assert!(message(backup::check(&b, &ortus_core::schemas())).contains("does not have"));
 }

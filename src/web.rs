@@ -11,7 +11,11 @@ use rust_web_server::header::Header;
 use rust_web_server::middleware::Middleware;
 use rust_web_server::prelude::*;
 use rust_web_server::range::Range;
-use rust_web_server::state::AppWithState;
+use std::sync::Arc;
+
+use rust_web_server::async_state::AsyncAppWithState;
+
+use crate::instance::Instance;
 
 #[derive(rust_embed::RustEmbed)]
 #[folder = "web/dist"]
@@ -22,8 +26,9 @@ struct Client;
 pub const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'";
 
 /// Paths of the web client that are screens, not files: each answers
-/// with the page, and the client shows the screen for the path.
-pub const SCREENS: &[&str] = &["/"];
+/// with the page, and the client shows the screen for the path. Every app
+/// adds its own path and everything under it.
+pub const SCREENS: &[&str] = &["/", "/welcome", "/apps", "/settings", "/admin"];
 
 fn mime(path: &str) -> &'static str {
     match path.rsplit('.').next().unwrap_or_default() {
@@ -67,35 +72,66 @@ fn not_found() -> Response {
     Response::text(STATUS_CODE_REASON_PHRASE.n404_not_found, "Not found")
 }
 
-fn page(_: &Request, _: &PathParams, _: &ConnectionInfo, _: &()) -> Response {
+async fn page() -> Response {
     file("index.html", "no-cache").unwrap_or_else(not_found)
 }
 
-fn asset(_: &Request, params: &PathParams, _: &ConnectionInfo, _: &()) -> Response {
-    let path = params.get("path").unwrap_or_default();
-    // Embedded names only: a path with `..` simply has no such file.
-    file(
-        &format!("assets/{path}"),
-        "public, max-age=31536000, immutable",
-    )
-    .unwrap_or_else(not_found)
-}
-
-fn favicon(_: &Request, _: &PathParams, _: &ConnectionInfo, _: &()) -> Response {
-    file("favicon.svg", "public, max-age=86400").unwrap_or_else(not_found)
-}
-
-/// Registers the web client on `app`.
-pub fn register(mut app: AppWithState<()>) -> AppWithState<()> {
-    for screen in SCREENS {
-        app = app.get(screen, page);
+/// Registers the web client on `app`: the core's screens, every app's
+/// screens, and the embedded files.
+pub fn register(
+    mut app: AsyncAppWithState<Arc<Instance>>,
+    apps: &[Arc<dyn crate::app::App>],
+) -> AsyncAppWithState<Arc<Instance>> {
+    let mut screens: Vec<String> = SCREENS.iter().map(|s| s.to_string()).collect();
+    for screen in SCREENS.iter().skip(1) {
+        screens.push(format!("{screen}/*rest"));
     }
-    app.get("/assets/*path", asset).get("/favicon.svg", favicon)
+    let mut app_paths: Vec<&str> = KNOWN_APP_PATHS.to_vec();
+    for owner in apps {
+        let path = owner.info().path;
+        if !app_paths.contains(&path) {
+            app_paths.push(path);
+        }
+    }
+    for path in app_paths {
+        screens.push(path.to_string());
+        screens.push(format!("{path}/*rest"));
+    }
+    for screen in &screens {
+        app = app.get(screen, |_, _, _, _| page());
+    }
+    app.get("/assets/*path", |_, params: PathParams, _, _| async move {
+        let path = params.get("path").unwrap_or_default().to_string();
+        // Embedded names only: a path with `..` simply has no such file.
+        file(
+            &format!("assets/{path}"),
+            "public, max-age=31536000, immutable",
+        )
+        .unwrap_or_else(not_found)
+    })
+    .get("/favicon.svg", |_, _, _, _| async {
+        file("favicon.svg", "public, max-age=86400").unwrap_or_else(not_found)
+    })
 }
 
 /// The health probes rws answers: liveness (`/healthz`, `/livez`) and
 /// readiness (`/readyz`, which fails while the program shuts down).
 pub const PROBES: &[&str] = &["/healthz", "/livez", "/readyz"];
+
+/// Where the apps of Ortus live. The page is served under each of them
+/// even when the app is not installed, so the client can say so instead of
+/// the server answering "Not found".
+pub const KNOWN_APP_PATHS: &[&str] = &[
+    "/mail",
+    "/calendar",
+    "/people",
+    "/drive",
+    "/docs",
+    "/chat",
+    "/calls",
+    "/tasks",
+    "/approvals",
+];
 
 /// Lets through only the paths Ortus serves, and refuses the rest.
 ///
@@ -103,10 +139,20 @@ pub const PROBES: &[&str] = &["/healthz", "/livez", "/readyz"];
 /// route matches. For Ortus that directory can hold the database and the
 /// configuration, so nothing may reach that fallback: a request must be
 /// for a screen, an embedded file, the API or the health probe.
-pub struct OnlyOrtusPaths;
+pub struct OnlyOrtusPaths {
+    app_paths: Vec<String>,
+}
 
-/// Whether `uri` (a path, with or without a query) is one Ortus serves.
-pub fn is_served(uri: &str) -> bool {
+impl OnlyOrtusPaths {
+    /// For the core and apps living at `app_paths` (as `/mail`).
+    pub fn new(app_paths: Vec<String>) -> Self {
+        Self { app_paths }
+    }
+}
+
+/// Whether `uri` (a path, with or without a query) is one Ortus serves,
+/// with apps at `app_paths`.
+pub fn is_served(uri: &str, app_paths: &[String]) -> bool {
     let path = uri.split(['?', '#']).next().unwrap_or_default();
     // No way to climb out of an allowed prefix, written plainly or encoded.
     let lowered = path.to_ascii_lowercase();
@@ -116,7 +162,11 @@ pub fn is_served(uri: &str) -> bool {
     {
         return false;
     }
+    let under = |base: &str| path == base || path.starts_with(&format!("{base}/"));
     SCREENS.contains(&path)
+        || SCREENS.iter().skip(1).any(|screen| under(screen))
+        || KNOWN_APP_PATHS.iter().any(|app| under(app))
+        || app_paths.iter().any(|app| under(app))
         || PROBES.contains(&path)
         || path == "/favicon.svg"
         || path.starts_with("/assets/")
@@ -131,7 +181,7 @@ impl Middleware for OnlyOrtusPaths {
         connection: &ConnectionInfo,
         next: &dyn Application,
     ) -> Result<Response, String> {
-        if is_served(&request.request_uri) {
+        if is_served(&request.request_uri, &self.app_paths) {
             next.execute(request, connection)
         } else {
             Ok(not_found())

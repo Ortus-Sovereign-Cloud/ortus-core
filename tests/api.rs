@@ -11,9 +11,11 @@ fn json(text: &str) -> Value {
 
 #[test]
 fn health_answers_under_the_versioned_prefix() {
-    let response = TestClient::new(ortus_core::app())
-        .get("/api/v1/health")
-        .send();
+    let response = TestClient::new(ortus_core::app(ortus_core::instance::testing::instance(
+        Vec::new(),
+    )))
+    .get("/api/v1/health")
+    .send();
     assert_eq!(200, response.status());
     assert_eq!(Some("application/json"), response.header("Content-Type"));
     let body = json(response.body_text());
@@ -23,7 +25,9 @@ fn health_answers_under_the_versioned_prefix() {
 
 #[test]
 fn every_response_has_a_request_id_and_keeps_the_callers() {
-    let client = TestClient::new(ortus_core::app());
+    let client = TestClient::new(ortus_core::app(ortus_core::instance::testing::instance(
+        Vec::new(),
+    )));
     let generated = client.get("/api/v1/health").send();
     let first = generated
         .header("X-Request-Id")
@@ -45,7 +49,9 @@ fn every_response_has_a_request_id_and_keeps_the_callers() {
 
 #[test]
 fn unknown_api_paths_get_the_error_format_for_every_method() {
-    let client = TestClient::new(ortus_core::app());
+    let client = TestClient::new(ortus_core::app(ortus_core::instance::testing::instance(
+        Vec::new(),
+    )));
     let responses = [
         client
             .get("/api/v1/nothing/here")
@@ -82,9 +88,11 @@ fn unknown_api_paths_get_the_error_format_for_every_method() {
 
 #[test]
 fn an_error_without_a_caller_id_reports_the_generated_one() {
-    let response = TestClient::new(ortus_core::app())
-        .get("/api/v1/nothing")
-        .send();
+    let response = TestClient::new(ortus_core::app(ortus_core::instance::testing::instance(
+        Vec::new(),
+    )))
+    .get("/api/v1/nothing")
+    .send();
     let body = json(response.body_text());
     let id = response.header("X-Request-Id").expect("a generated id");
     assert_eq!(id, body["error"]["request_id"].as_str().unwrap());

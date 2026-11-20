@@ -3,7 +3,9 @@
 use rust_web_server::test_client::TestClient;
 
 fn client() -> TestClient<impl rust_web_server::application::Application> {
-    TestClient::new(ortus_core::app())
+    TestClient::new(ortus_core::app(ortus_core::instance::testing::instance(
+        Vec::new(),
+    )))
 }
 
 #[test]
@@ -160,8 +162,12 @@ fn only_ortus_paths_are_let_through() {
         "/api/v1/health",
         "/api/v1/apps?x=1",
         "/api/v2/anything",
+        "/mail",
+        "/mail/inbox/42",
+        "/admin/users",
+        "/welcome",
     ] {
-        assert!(is_served(path), "{path}");
+        assert!(is_served(path, &[]), "{path}");
     }
     for path in [
         "",
@@ -170,12 +176,17 @@ fn only_ortus_paths_are_let_through() {
         "/ortus.toml",
         "/assets",
         "/apix",
+        "/mailx",
+        "/notes",
+        "/mail/../ortus.toml",
         "/healthz2",
         "/api/..",
         "/assets/a\\b",
         "/assets/a%5Cb",
         "/api/%00",
     ] {
-        assert!(!is_served(path), "{path}");
+        assert!(!is_served(path, &[]), "{path}");
     }
+    // An installed app's own path is served too.
+    assert!(is_served("/notes/x", &["/notes".to_string()]));
 }
