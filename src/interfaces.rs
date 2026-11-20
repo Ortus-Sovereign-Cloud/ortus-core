@@ -270,6 +270,8 @@ pub struct NewRecord<'a> {
     pub source: &'a str,
     /// Who may open it besides records officers (the route's people).
     pub readers: &'a [String],
+    /// A chat channel told that it was filed ("flood-response"), as `by`.
+    pub channel: Option<&'a str>,
 }
 
 /// Provided by the records app; used by docs (and later by others) to
