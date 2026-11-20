@@ -93,7 +93,9 @@ jobs:
           done
           exit 1
       - name: A test directory (OpenLDAP) with people and groups
-        run: ci/ldap-test.sh 51389 | sed 's/^export //' >> "$GITHUB_ENV"
+        run: |
+          out="$(ci/ldap-test.sh 51389)"
+          echo "${out#export }" >> "$GITHUB_ENV"
       - name: A PostgreSQL that speaks TLS, with its own CA
         run: ci/postgres-tls.sh 55433 "$RUNNER_TEMP/pgtls" | sed 's/^export //' | tr ' ' '\n' >> "$GITHUB_ENV"
       - uses: actions/setup-node@v4

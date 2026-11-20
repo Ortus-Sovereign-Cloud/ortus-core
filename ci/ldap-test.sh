@@ -12,5 +12,15 @@ for _ in $(seq 60); do
   sleep 1
 done
 docker cp tests/fixtures/ldap-seed.ldif ortus-test-ldap:/tmp/seed.ldif
-docker exec ortus-test-ldap ldapadd -x -H ldap://localhost -D cn=admin,dc=ministry,dc=example -w adminpass -f /tmp/seed.ldif >/dev/null
+# The image restarts its server while it sets itself up: searches can
+# answer before writes do. Up to two minutes.
+for attempt in $(seq 120); do
+  # -c goes on past entries a partial earlier try already added.
+  docker exec ortus-test-ldap ldapadd -c -x -H ldap://localhost -D cn=admin,dc=ministry,dc=example -w adminpass -f /tmp/seed.ldif >/dev/null 2>&1 || true
+  # Captured first: with pipefail, grep -q stopping early would fail the pipe.
+  found="$(docker exec ortus-test-ldap ldapsearch -x -H ldap://localhost -b ou=groups,dc=ministry,dc=example -D cn=admin,dc=ministry,dc=example -w adminpass "(cn=Logistics)" 2>/dev/null || true)"
+  grep -q "^member: uid=marek" <<<"$found" && break
+  [ "$attempt" = 120 ] && { echo "ldap-test: could not seed the directory" >&2; exit 1; }
+  sleep 1
+done
 echo "export ORTUS_TEST_LDAP=ldap://127.0.0.1:$port"
