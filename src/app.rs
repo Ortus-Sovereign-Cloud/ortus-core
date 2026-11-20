@@ -97,6 +97,12 @@ pub trait App: Send + Sync + 'static {
         Vec::new()
     }
 
+    /// Jobs to run on a schedule: (kind, every so many milliseconds, at
+    /// least a minute). The kind must be one of [`App::jobs`].
+    fn periodic(&self) -> Vec<(&'static str, i64)> {
+        Vec::new()
+    }
+
     /// The listeners and loops the app runs for each role.
     fn role_tasks(&self) -> Vec<RoleTask> {
         Vec::new()

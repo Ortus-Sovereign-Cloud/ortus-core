@@ -214,11 +214,23 @@ impl AppWorker {
                 worker = worker.handle(&job.kind, job.handler);
             }
         }
+        let mut periodic = crate::PERIODIC.to_vec();
+        for app in &instance.apps {
+            // Only kinds the app also handles; one kind once.
+            for (kind, every) in app.periodic() {
+                if owners.iter().any(|(k, _)| k == kind)
+                    && !periodic.iter().any(|(k, _)| *k == kind)
+                    && every >= 60_000
+                {
+                    periodic.push((kind, every));
+                }
+            }
+        }
         Self {
             instance,
             worker,
             owners,
-            periodic: crate::PERIODIC.to_vec(),
+            periodic,
             scheduled: std::sync::Mutex::new(i64::MIN),
         }
     }
