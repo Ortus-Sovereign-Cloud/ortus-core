@@ -10,7 +10,17 @@ import "./ortus-sign-up.js";
 import "./ortus-terms.js";
 import "./ortus-website.js";
 
-type View = { kind: "loading" } | { kind: "setup" } | { kind: "sign-in" } | { kind: "sign-up" } | { kind: "terms" } | { kind: "website"; signupOpen: boolean } | { kind: "app"; me: Me } | { kind: "accept" } | { kind: "failed" };
+type View =
+  | { kind: "loading" }
+  | { kind: "setup" }
+  | { kind: "sign-in" }
+  | { kind: "sign-up" }
+  | { kind: "terms" }
+  | { kind: "website"; signupOpen: boolean }
+  | { kind: "app"; me: Me }
+  | { kind: "accept" }
+  | { kind: "public"; element: HTMLElement }
+  | { kind: "failed" };
 
 /**
  * Decides what the address shows: the setup page on a new installation,
@@ -40,6 +50,25 @@ export class OrtusRoot extends LitElement {
       this.view = { kind: "terms" };
       return;
     }
+    // An app's public page (/<app>/public/...): its element
+    // ortus-<app>-public, from the app's own client, for anyone.
+    const open = /^\/([a-z][a-z0-9-]{0,31})\/public\//.exec(location.pathname);
+    if (open) {
+      const id = open[1] ?? "";
+      try {
+        await import(/* @vite-ignore */ `/assets/apps/${id}/app.js`);
+      } catch {
+        this.view = { kind: "failed" };
+        return;
+      }
+      if (customElements.get(`ortus-${id}-public`)) {
+        this.view = {
+          kind: "public",
+          element: document.createElement(`ortus-${id}-public`),
+        };
+        return;
+      }
+    }
     let user: Me | null;
     try {
       user = await session();
@@ -53,7 +82,10 @@ export class OrtusRoot extends LitElement {
       return;
     }
     const needed = await setupNeeded().catch(() => false);
-    const about = location.pathname === "/" ? await site().catch(() => undefined) : undefined;
+    const about =
+      location.pathname === "/"
+        ? await site().catch(() => undefined)
+        : undefined;
     // With the website on (the demo), visitors always get the website at
     // the root; the setup page is reached through its link only.
     if (about?.website) {
@@ -64,7 +96,8 @@ export class OrtusRoot extends LitElement {
     } else if (location.pathname === "/sign-up") {
       this.view = { kind: "sign-up" };
     } else {
-      if (location.pathname !== "/sign-in") history.replaceState(null, "", "/sign-in");
+      if (location.pathname !== "/sign-in")
+        history.replaceState(null, "", "/sign-in");
       this.view = { kind: "sign-in" };
     }
   }
@@ -82,9 +115,13 @@ export class OrtusRoot extends LitElement {
       case "accept":
         return html`<ortus-accept></ortus-accept>`;
       case "website":
-        return html`<ortus-website .signupOpen=${this.view.signupOpen}></ortus-website>`;
+        return html`<ortus-website
+          .signupOpen=${this.view.signupOpen}
+        ></ortus-website>`;
       case "app":
         return html`<ortus-shell .me=${this.view.me}></ortus-shell>`;
+      case "public":
+        return this.view.element;
       case "failed":
         return html`<ortus-shell></ortus-shell>`;
       default:
