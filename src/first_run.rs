@@ -50,6 +50,21 @@ fn public_address(url: &str) -> bool {
         && !name.ends_with(".localhost")
 }
 
+/// Where the database and files are, without secrets.
+pub fn places(config: &crate::config::Config) -> (Value, Value) {
+    let database = match &config.database {
+        Database::Sqlite { .. } => json!({ "engine": "sqlite", "where": "this server" }),
+        Database::Postgres { url, .. } => json!({ "engine": "postgres", "where": host_of(url) }),
+    };
+    let files = match &config.files {
+        FileStore::Local { .. } => json!({ "engine": "local", "where": "this server" }),
+        FileStore::S3(s3) => {
+            json!({ "engine": "s3", "where": format!("{} / {}", host_of(&s3.endpoint), s3.bucket) })
+        }
+    };
+    (database, files)
+}
+
 async fn overview(request: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiError> {
     let me = crate::auth::current(request, ortus)
         .await
@@ -114,16 +129,7 @@ async fn overview(request: &Request, ortus: &Arc<Instance>) -> Result<Response, 
         outbound
             .push(json!({ "what": "directory", "host": host_of(row.text(0).unwrap_or_default()) }));
     }
-    let database = match &config.database {
-        Database::Sqlite { .. } => json!({ "engine": "sqlite", "where": "this server" }),
-        Database::Postgres { url, .. } => json!({ "engine": "postgres", "where": host_of(url) }),
-    };
-    let files = match &config.files {
-        FileStore::Local { .. } => json!({ "engine": "local", "where": "this server" }),
-        FileStore::S3(s3) => {
-            json!({ "engine": "s3", "where": format!("{} / {}", host_of(&s3.endpoint), s3.bucket) })
-        }
-    };
+    let (database, files) = places(config);
     Ok(ok(&json!({
         "name": me.user.name,
         "steps": steps,

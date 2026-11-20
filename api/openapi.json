@@ -1143,6 +1143,90 @@
         ]
       }
     },
+    "/api/v1/admin/sovereignty": {
+      "get": {
+        "description": "For administrators and owners.",
+        "operationId": "getSovereignty",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Where data lives, the hosts the program called (and any not configured), the master key's facts, labels, partners, retention and holds, and the audit log's size and last check.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/sovereignty/report": {
+      "get": {
+        "description": "For administrators and owners.",
+        "operationId": "complianceReport",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "The compliance report as a JSON file: the same facts, with the audit chain verified now.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/users": {
       "get": {
         "description": "For administrators and owners.",

@@ -104,12 +104,15 @@ pub fn job(settings: Option<OutgoingMail>) -> Option<JobKind> {
     let settings = Arc::new(settings?);
     Some(JobKind {
         kind: JOB.into(),
-        handler: Box::new(move |job, _tx| {
+        handler: Box::new(move |job, tx| {
             let settings = Arc::clone(&settings);
             let payload = job.payload.clone();
             Box::pin(async move {
                 let message: Outgoing =
                     serde_json::from_str(&payload).map_err(|e| format!("bad mail job: {e}"))?;
+                crate::outbound::note_in(tx, "mail", &settings.host)
+                    .await
+                    .map_err(|e| e.to_string())?;
                 send(&settings, &message).await
             })
         }),

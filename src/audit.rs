@@ -368,7 +368,17 @@ mod routes {
     ) -> BoxFuture<'static, Response> {
         Box::pin(async move {
             match verify(ortus.store.as_ref()).await {
-                Ok(result) => ok(&json!(result)),
+                Ok(result) => {
+                    // The last check, for the Sovereignty screen.
+                    let last = json!({ "at": crate::program::now_ms(), "events": result.events, "broken_at": result.broken_at });
+                    let _ = crate::auth::policy::set_setting(
+                        ortus.store.as_ref(),
+                        "audit_check",
+                        &last.to_string(),
+                    )
+                    .await;
+                    ok(&json!(result))
+                }
                 Err(_) => ApiError::internal().response(&request),
             }
         })

@@ -182,6 +182,7 @@ async fn save(request: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiE
         ca_certificate: input.ca_certificate.filter(|c| !c.trim().is_empty()),
     };
     // Reachable, and the sign-in works, before it is kept.
+    crate::outbound::note(ortus.store.as_ref(), "directory", &settings.url).await;
     let mut ldap = connect(&settings).await.map_err(ApiError::bad_request)?;
     let _ = ldap.unbind().await;
     let mut tx = ortus.store.begin().await?;
@@ -231,6 +232,7 @@ async fn sync(request: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiE
     let settings = stored(ortus)
         .await?
         .ok_or_else(|| ApiError::bad_request("No directory is connected."))?;
+    crate::outbound::note(ortus.store.as_ref(), "directory", &settings.url).await;
     let mut ldap = connect(&settings).await.map_err(ApiError::bad_request)?;
     let people = search(
         &mut ldap,

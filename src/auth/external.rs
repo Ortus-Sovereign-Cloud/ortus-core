@@ -213,6 +213,7 @@ fn start(
         let Ok(Some(provider)) = provider(ortus.store.as_ref(), &id).await else {
             return failed("unknown");
         };
+        crate::outbound::note(ortus.store.as_ref(), "sign_in", &provider.issuer).await;
         let document = match discover(&provider).await {
             Ok(document) => document,
             Err(e) => {
@@ -458,6 +459,9 @@ fn callback(
             let document = discover(&provider).await?;
             let token_url = document["token_endpoint"].as_str().ok_or("no token endpoint")?;
             let jwks_uri = document["jwks_uri"].as_str().ok_or("no jwks_uri")?;
+            for url in [provider.issuer.as_str(), token_url, jwks_uri] {
+                crate::outbound::note(store, "sign_in", url).await;
+            }
             let mut form_body = format!(
                 "grant_type=authorization_code&code={}&redirect_uri={}&client_id={}&code_verifier={}",
                 form::encode(&code),
