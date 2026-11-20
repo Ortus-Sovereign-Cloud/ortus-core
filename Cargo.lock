@@ -1925,15 +1925,19 @@ version = "0.1.0"
 dependencies = [
  "hex",
  "opendal",
+ "opendal-http-transport-reqwest",
+ "reqwest",
  "rusqlite",
  "rust-embed",
  "rust-web-server",
+ "rustls",
  "serde",
  "serde_json",
  "sha2",
  "tokio",
  "tokio-postgres",
  "toml",
+ "webpki-roots",
 ]
 
 [[package]]

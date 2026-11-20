@@ -268,3 +268,75 @@ fn the_command_line_explains_itself() {
     assert_eq!(Some(1), output.status.code());
     assert!(text(&output).contains("incomplete"), "{}", text(&output));
 }
+
+#[test]
+fn s3_works_on_a_machine_without_a_certificate_store() {
+    // The container image has no system certificate store at all; this is
+    // the same for the program.
+    let Ok(endpoint) = std::env::var("ORTUS_TEST_S3_ENDPOINT") else {
+        assert!(
+            std::env::var("ORTUS_REQUIRE_S3").is_err(),
+            "ORTUS_REQUIRE_S3 is set but ORTUS_TEST_S3_ENDPOINT is not"
+        );
+        eprintln!("skipped: set ORTUS_TEST_S3_ENDPOINT to run this test on S3");
+        return;
+    };
+    let base = dir();
+    let data = base.0.join("data");
+    let empty = base.0.join("no-certificates");
+    std::fs::create_dir_all(&empty).unwrap();
+    let with_s3 = |command: &mut Command| {
+        command
+            .env("ORTUS_FILES_S3_ENDPOINT", &endpoint)
+            .env(
+                "ORTUS_FILES_S3_BUCKET",
+                std::env::var("ORTUS_TEST_S3_BUCKET").unwrap(),
+            )
+            .env(
+                "ORTUS_FILES_S3_ACCESS_KEY",
+                std::env::var("ORTUS_TEST_S3_ACCESS_KEY").unwrap(),
+            )
+            .env(
+                "ORTUS_FILES_S3_SECRET_KEY",
+                std::env::var("ORTUS_TEST_S3_SECRET_KEY").unwrap(),
+            )
+            .env(
+                "ORTUS_FILES_S3_ROOT",
+                format!(
+                    "install-test-{}-{}",
+                    std::process::id(),
+                    NEXT.fetch_add(1, Ordering::SeqCst)
+                ),
+            )
+            .env("SSL_CERT_FILE", empty.join("none.pem"))
+            .env("SSL_CERT_DIR", &empty);
+    };
+    let mut first = ortus(&data, free_port(), "all");
+    with_s3(&mut first);
+    let started = first
+        .arg("serve")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut running = Running {
+        child: started,
+        port: 0,
+    };
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !data.join("ortus.db").exists() {
+        assert!(Instant::now() < deadline, "the program did not start");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(running.child.try_wait().unwrap().is_none());
+    drop(running);
+
+    let mut backup = ortus(&data, free_port(), "all");
+    with_s3(&mut backup);
+    let output = backup
+        .args(["backup", base.0.join("b").to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", text(&output));
+}
