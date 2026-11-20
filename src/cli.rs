@@ -11,6 +11,7 @@
 //! ortus setup-link         a new link to create the first owner
 //! ortus rotate-keys        a new secrets key; every stored secret re-sealed
 //! ortus version            print the version
+//! ortus reference          print the API reference (OpenAPI) of the core and its apps
 //! ```
 //!
 //! Every command reads the same configuration as the program itself, so a
@@ -40,6 +41,9 @@ const HELP: &str =
   restore <dir>       restore a backup into an empty database and file store
   setup-link          print a new link to create the first owner (until there is one)
   rotate-keys         seal every stored secret under a new key (older keys stay to open old backups)
+  export-point <name> <dir>
+                      write restore point <name> out as a backup directory
+  reference           print the API reference (OpenAPI) of the core and its apps
   version             print the version
 
 Settings come from ORTUS_CONFIG (or ./ortus.toml) and ORTUS_* variables.";
@@ -195,6 +199,16 @@ pub async fn run(name: &str, version: &str, apps: Vec<Arc<dyn App>>, args: &[Str
             Ok(())
         })
         .await,
+        ["reference"] => {
+            // The API reference of this program: the core's operations and
+            // every app's, as OpenAPI (the reference site is made from it).
+            let mut all = crate::api::routes();
+            for app in &apps {
+                all.extend(app.routes());
+            }
+            println!("{}", crate::api::reference_text(&all).trim_end());
+            0
+        }
         ["version" | "--version" | "-V"] => {
             println!("{name} {version}");
             0
