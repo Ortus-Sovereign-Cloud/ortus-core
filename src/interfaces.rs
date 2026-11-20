@@ -20,14 +20,90 @@ pub struct ItemRef {
     pub path: String,
 }
 
-/// Provided by the calendar app; used by mail for invitations.
+/// Provided by the calendar app; used by mail for invitations and the
+/// day's agenda, and by compose for times that work.
 pub trait Calendar: Send + Sync {
-    /// Puts the invitation (iCalendar text) into the person's calendar.
-    fn add_invitation<'a>(
+    /// An iMIP message (RFC 6047) came for the person from `sender` (the
+    /// address mail verified): a REQUEST goes into their calendar, a REPLY
+    /// updates the event they organise, a CANCEL cancels it.
+    fn receive<'a>(
         &'a self,
         user: &'a str,
+        sender: &'a str,
         ics: &'a str,
-    ) -> BoxFuture<'a, Result<ItemRef, String>>;
+    ) -> BoxFuture<'a, Result<Invitation, String>>;
+
+    /// The person answers an invitation: ACCEPTED, TENTATIVE or DECLINED.
+    fn respond<'a>(
+        &'a self,
+        user: &'a str,
+        uid: &'a str,
+        answer: &'a str,
+    ) -> BoxFuture<'a, Result<Invitation, String>>;
+
+    /// The person's events between two times (Unix ms), in order.
+    fn agenda<'a>(
+        &'a self,
+        user: &'a str,
+        from_ms: i64,
+        to_ms: i64,
+    ) -> BoxFuture<'a, Result<Vec<AgendaItem>, String>>;
+
+    /// When everyone in `people` (addresses here) is free for `minutes`
+    /// between two times: up to `limit` starts (Unix ms).
+    fn free_times<'a>(
+        &'a self,
+        user: &'a str,
+        people: &'a [String],
+        from_ms: i64,
+        to_ms: i64,
+        minutes: i64,
+        limit: usize,
+    ) -> BoxFuture<'a, Result<Vec<i64>, String>>;
+}
+
+/// An invitation as the person sees it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Invitation {
+    pub uid: String,
+    /// REQUEST, REPLY or CANCEL.
+    pub method: String,
+    pub summary: String,
+    pub start_ms: Option<i64>,
+    pub end_ms: Option<i64>,
+    pub organizer: Option<String>,
+    /// The person's own answer: NEEDS-ACTION, ACCEPTED, TENTATIVE, DECLINED.
+    pub answer: Option<String>,
+    pub cancelled: bool,
+    pub item: Option<ItemRef>,
+}
+
+/// One event in the day's agenda.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AgendaItem {
+    pub uid: String,
+    pub summary: String,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub all_day: bool,
+    /// The person's answer when it is an invitation.
+    pub answer: Option<String>,
+    pub item: ItemRef,
+}
+
+/// Provided by the mail app; used by the calendar to send invitations
+/// and answers to people outside (iMIP), past the label policy.
+pub trait Mailer: Send + Sync {
+    /// Sends `ics` (with its METHOD) from the person to `to`, with a plain
+    /// text for mail apps that do not read calendars.
+    fn send_invitation<'a>(
+        &'a self,
+        user: &'a str,
+        to: &'a [String],
+        subject: &'a str,
+        text: &'a str,
+        ics: &'a str,
+    ) -> BoxFuture<'a, Result<(), String>>;
 }
 
 /// Provided by the contacts part of the calendar app; used by mail and
