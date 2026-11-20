@@ -623,6 +623,7 @@ pub fn routes() -> Vec<Route> {
     all.extend(crate::search::routes());
     all.extend(crate::sovereignty::routes());
     all.extend(crate::notify::routes());
+    all.extend(crate::points::routes());
     all
 }
 

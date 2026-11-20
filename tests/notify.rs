@@ -181,6 +181,27 @@ fn notifying(store: Arc<dyn AsyncStore>) {
         block_on(notify::quiet(store.as_ref(), &olena_id, 12 * 60)).unwrap(),
         "do not disturb"
     );
+    // Do not disturb off again: the quiet hours set before are still there.
+    call(
+        &client,
+        &olena,
+        "PATCH",
+        "/notifications/settings",
+        Some(json!({"dnd": false})),
+    );
+    assert!(
+        block_on(notify::quiet(store.as_ref(), &olena_id, 22 * 60)).unwrap(),
+        "quiet hours kept"
+    );
+    // `null` clears them.
+    call(
+        &client,
+        &olena,
+        "PATCH",
+        "/notifications/settings",
+        Some(json!({"quietFrom": null, "quietTo": null})),
+    );
+    assert!(!block_on(notify::quiet(store.as_ref(), &olena_id, 22 * 60)).unwrap());
 
     // Only the newest 500 are kept.
     let marek_id = id("marek@ministry.example");
@@ -206,6 +227,29 @@ fn notifying(store: Arc<dyn AsyncStore>) {
     ))
     .unwrap();
     assert!(kept[0].int(0).unwrap() <= 500 && kept[0].int(0).unwrap() >= 495);
+    // A path that would leave Ortus becomes "/".
+    for bad in ["/\\evil.example", "/\t/evil.example", "//evil.example"] {
+        block_on(notify::add(
+            store.as_ref(),
+            &olena_id,
+            &Notice {
+                app: "chat",
+                kind: Kind::Alert,
+                title: "x",
+                detail: "",
+                path: bad,
+                key: None,
+                args: json!({}),
+            },
+        ))
+        .unwrap();
+    }
+    let paths = block_on(store.query(
+        "SELECT path FROM core_notifications WHERE user_id = $1 AND title = 'x'",
+        &[olena_id.as_str().into()],
+    ))
+    .unwrap();
+    assert!(paths.iter().all(|r| r.text(0) == Some("/")));
 }
 
 #[test]

@@ -208,6 +208,38 @@ pub trait App: Send + Sync + 'static {
     ) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async { Ok(()) })
     }
+
+    /// What of a person's this app brings back from a restore point, by
+    /// kind ("folder", "calendar"); none by default.
+    fn restorable(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    /// The person's things of that kind as they were at the point: (id,
+    /// name), for the administrator to choose from.
+    fn restore_choices<'a>(
+        &'a self,
+        _point: &'a crate::points::Snapshot,
+        _user: &'a str,
+        _what: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<(String, String)>, String>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
+    /// Brings one back, as it was at the point, into a new place named
+    /// `into` beside the person's own (nothing of theirs is overwritten).
+    /// Returns the new place's path in the web client.
+    fn restore<'a>(
+        &'a self,
+        _instance: &'a Arc<Instance>,
+        _point: &'a crate::points::Snapshot,
+        _user: &'a str,
+        _what: &'a str,
+        _id: &'a str,
+        _into: &'a str,
+    ) -> BoxFuture<'a, Result<String, String>> {
+        Box::pin(async { Err("this app restores nothing".into()) })
+    }
 }
 
 /// The schema of an app, named `<id>` in the migration history.

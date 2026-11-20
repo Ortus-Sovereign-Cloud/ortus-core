@@ -93,6 +93,13 @@ pub async fn run(name: &str, version: &str, apps: Vec<Arc<dyn App>>, args: &[Str
             })
             .await
         }
+        ["export-point", name, dir] => with_config(|config| async move {
+            let dest = crate::points::destination(&config.data_dir)?;
+            let manifest = crate::points::export(&dest, name, Path::new(dir)).await.map_err(|e| e.to_string())?;
+            println!("ortus: restore point {name} written to {dir} ({} tables, {} files); `ortus restore {dir}` takes it", manifest.tables.len(), manifest.files.count);
+            Ok(())
+        })
+        .await,
         ["check-backup", dir] => match backup::check(Path::new(dir), schemas) {
             Ok(checked) => {
                 record("backup_checked_at").await;

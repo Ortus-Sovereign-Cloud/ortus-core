@@ -314,7 +314,8 @@ fn s3_works_on_a_machine_without_a_certificate_store() {
             .env("SSL_CERT_FILE", empty.join("none.pem"))
             .env("SSL_CERT_DIR", &empty);
     };
-    let mut first = ortus(&data, free_port(), "all");
+    let port = free_port();
+    let mut first = ortus(&data, port, "all");
     with_s3(&mut first);
     let started = first
         .arg("serve")
@@ -326,13 +327,17 @@ fn s3_works_on_a_machine_without_a_certificate_store() {
         child: started,
         port: 0,
     };
-    let deadline = Instant::now() + Duration::from_secs(20);
-    while !data.join("ortus.db").exists() {
+    // Up and answering: its schema is in place (a busy machine takes a
+    // while after the database file appears).
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while !get(port, "/readyz").starts_with("HTTP/1.1 200") {
         assert!(Instant::now() < deadline, "the program did not start");
-        std::thread::sleep(Duration::from_millis(50));
+        assert!(
+            running.child.try_wait().unwrap().is_none(),
+            "the program stopped"
+        );
+        std::thread::sleep(Duration::from_millis(100));
     }
-    std::thread::sleep(Duration::from_millis(300));
-    assert!(running.child.try_wait().unwrap().is_none());
     drop(running);
 
     let mut backup = ortus(&data, free_port(), "all");

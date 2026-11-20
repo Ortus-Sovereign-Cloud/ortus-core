@@ -104,9 +104,11 @@ pub async fn add_in(tx: &mut dyn AsyncTx, user: &str, n: &Notice<'_>) -> StoreRe
     let clip = |s: &str, max: usize| -> String {
         s.chars().filter(|c| !c.is_control()).take(max).collect()
     };
-    // Paths stay inside Ortus.
-    let path = if n.path.starts_with('/') && !n.path.starts_with("//") {
-        clip(n.path, 500)
+    // Paths stay inside Ortus (checked after cleaning; no "//" or "/\").
+    let cleaned = clip(n.path, 500);
+    let path = if cleaned.starts_with('/') && !cleaned.starts_with("//") && !cleaned.contains('\\')
+    {
+        cleaned
     } else {
         "/".to_string()
     };
@@ -126,15 +128,23 @@ pub async fn add_in(tx: &mut dyn AsyncTx, user: &str, n: &Notice<'_>) -> StoreRe
         ],
     )
     .await?;
-    // Beyond the newest KEEP, the oldest go (a form both databases take).
+    // Beyond the newest KEEP of each sort, the oldest go: approvals are
+    // kept apart, so a noisy feed of alerts never pushes them out (a form
+    // both databases take).
+    let approval = n.kind == Kind::Approval;
+    let same = if approval {
+        "kind = 'approval'"
+    } else {
+        "kind <> 'approval'"
+    };
     let cut = tx
-        .query("SELECT at FROM core_notifications WHERE user_id = $1 ORDER BY at DESC LIMIT 1 OFFSET $2", &[user.into(), KEEP.into()])
+        .query(&format!("SELECT at FROM core_notifications WHERE user_id = $1 AND {same} ORDER BY at DESC LIMIT 1 OFFSET $2"), &[user.into(), KEEP.into()])
         .await?
         .first()
         .and_then(|r| r.int(0));
     if let Some(at) = cut {
         tx.execute(
-            "DELETE FROM core_notifications WHERE user_id = $1 AND at <= $2",
+            &format!("DELETE FROM core_notifications WHERE user_id = $1 AND {same} AND at <= $2"),
             &[user.into(), at.into()],
         )
         .await?;
@@ -212,13 +222,18 @@ async fn read(request: &Request, instance: &Arc<Instance>) -> Result<Response, A
     list(request, instance).await
 }
 
+/// A field left out keeps its value; `null` clears it.
+fn field<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Option<String>>, D::Error> {
+    Option::<String>::deserialize(d).map(Some)
+}
+
 #[derive(Deserialize)]
 struct Settings {
     /// Quiet hours, "08:00" style, both or neither.
-    #[serde(rename = "quietFrom")]
-    quiet_from: Option<String>,
-    #[serde(rename = "quietTo")]
-    quiet_to: Option<String>,
+    #[serde(rename = "quietFrom", default, deserialize_with = "field")]
+    quiet_from: Option<Option<String>>,
+    #[serde(rename = "quietTo", default, deserialize_with = "field")]
+    quiet_to: Option<Option<String>>,
     dnd: Option<bool>,
 }
 
@@ -236,36 +251,33 @@ async fn settings(request: &Request, instance: &Arc<Instance>) -> Result<Respons
         .ok_or_else(ApiError::sign_in)?
         .user;
     let input: Settings = body(request)?;
-    if input.quiet_from.as_deref().is_some_and(|v| !hhmm(v))
-        || input.quiet_to.as_deref().is_some_and(|v| !hhmm(v))
-        || input.quiet_from.is_some() != input.quiet_to.is_some()
+    let s = instance.store.as_ref();
+    let had = s
+        .query(
+            "SELECT quiet_from, quiet_to, dnd FROM core_notify_settings WHERE user_id = $1",
+            &[me.id.as_str().into()],
+        )
+        .await?;
+    let stored = |i: usize| had.first().and_then(|r| r.text(i).map(str::to_string));
+    let quiet_from = input.quiet_from.unwrap_or_else(|| stored(0));
+    let quiet_to = input.quiet_to.unwrap_or_else(|| stored(1));
+    if quiet_from.as_deref().is_some_and(|v| !hhmm(v))
+        || quiet_to.as_deref().is_some_and(|v| !hhmm(v))
+        || quiet_from.is_some() != quiet_to.is_some()
     {
         return Err(ApiError::bad_request(
             "Quiet hours are a start and an end, like 17:00 and 08:00.",
         ));
     }
-    let s = instance.store.as_ref();
-    let had = s
-        .query(
-            "SELECT dnd FROM core_notify_settings WHERE user_id = $1",
-            &[me.id.as_str().into()],
-        )
-        .await?;
     let dnd = input
         .dnd
-        .unwrap_or_else(|| had.first().and_then(|r| r.int(0)).unwrap_or(0) != 0);
-    let mut tx = s.begin().await?;
-    tx.execute(
-        "DELETE FROM core_notify_settings WHERE user_id = $1",
-        &[me.id.as_str().into()],
+        .unwrap_or_else(|| had.first().and_then(|r| r.int(2)).unwrap_or(0) != 0);
+    // One statement (two tabs at once do not collide on the key).
+    s.execute(
+        "INSERT INTO core_notify_settings (user_id, quiet_from, quiet_to, dnd) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id) DO UPDATE SET quiet_from = excluded.quiet_from, quiet_to = excluded.quiet_to, dnd = excluded.dnd",
+        &[me.id.as_str().into(), quiet_from.into(), quiet_to.into(), i64::from(dnd).into()],
     )
     .await?;
-    tx.execute(
-        "INSERT INTO core_notify_settings (user_id, quiet_from, quiet_to, dnd) VALUES ($1, $2, $3, $4)",
-        &[me.id.as_str().into(), input.quiet_from.into(), input.quiet_to.into(), i64::from(dnd).into()],
-    )
-    .await?;
-    tx.commit().await?;
     list(request, instance).await
 }
 

@@ -265,6 +265,46 @@ fn from_json(value: &Json) -> Result<Value, BackupError> {
     })
 }
 
+/// The tables to back up (an Ortus schema must be there).
+pub(crate) async fn table_names(
+    tx: &mut dyn AsyncTx,
+    engine: Engine,
+) -> Result<Vec<String>, BackupError> {
+    let names = tables(tx, engine).await?;
+    if !names.iter().any(|name| name == HISTORY) {
+        return Err(BackupError(
+            "the database has no Ortus schema; there is nothing to back up".into(),
+        ));
+    }
+    for name in &names {
+        plain_name(name)?;
+    }
+    Ok(names)
+}
+
+/// One table as JSON lines: its columns, the text, and how many rows.
+pub(crate) async fn table_text(
+    tx: &mut dyn AsyncTx,
+    engine: Engine,
+    name: &str,
+) -> Result<(Vec<String>, String, u64), BackupError> {
+    plain_name(name)?;
+    let columns = columns(tx, engine, name).await?;
+    for column in &columns {
+        plain_name(column)?;
+    }
+    let rows = tx
+        .query(&format!("SELECT {} FROM {name}", columns.join(", ")), &[])
+        .await?;
+    let mut text = String::new();
+    for row in &rows {
+        let line: Vec<Json> = row.0.iter().map(to_json).collect();
+        text.push_str(&Json::from(line).to_string());
+        text.push('\n');
+    }
+    Ok((columns, text, rows.len() as u64))
+}
+
 /// Writes a backup of `store` and `files` into `dir`, which must not exist
 /// yet or be empty. Returns the manifest written.
 pub async fn backup(
@@ -284,34 +324,16 @@ pub async fn backup(
 
     let engine = store.engine();
     let mut tx = store.begin_read().await?;
-    let names = tables(&mut *tx, engine).await?;
-    if !names.iter().any(|name| name == HISTORY) {
-        return Err(BackupError(
-            "the database has no Ortus schema; there is nothing to back up".into(),
-        ));
-    }
+    let names = table_names(&mut *tx, engine).await?;
     let mut entries = Vec::new();
     for name in &names {
-        plain_name(name)?;
-        let columns = columns(&mut *tx, engine, name).await?;
-        for column in &columns {
-            plain_name(column)?;
-        }
-        let rows = tx
-            .query(&format!("SELECT {} FROM {name}", columns.join(", ")), &[])
-            .await?;
-        let mut text = String::new();
-        for row in &rows {
-            let line: Vec<Json> = row.0.iter().map(to_json).collect();
-            text.push_str(&Json::from(line).to_string());
-            text.push('\n');
-        }
+        let (columns, text, rows) = table_text(&mut *tx, engine, name).await?;
         let path = tables_dir.join(format!("{name}.jsonl"));
         std::fs::write(&path, &text).map_err(io(&path))?;
         entries.push(TableEntry {
             name: name.clone(),
             columns,
-            rows: rows.len() as u64,
+            rows,
             sha256: sha256(text.as_bytes()),
         });
     }

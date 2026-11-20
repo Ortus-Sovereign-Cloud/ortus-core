@@ -200,6 +200,10 @@ impl AppWorker {
             owners.push((job.kind.clone(), "core"));
             worker = worker.handle(&job.kind, job.handler);
         }
+        for job in crate::core_outside_jobs(&instance) {
+            owners.push((job.kind.clone(), "core"));
+            worker = worker.handle_outside(&job.kind, job.handler);
+        }
         for app in &instance.apps {
             let id = app.info().id;
             for job in app.jobs(&instance) {

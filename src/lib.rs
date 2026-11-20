@@ -23,6 +23,7 @@ pub mod mail_out;
 pub mod notify;
 pub mod oidc;
 pub mod outbound;
+pub mod points;
 pub mod policy;
 pub mod program;
 pub mod retention;
@@ -66,6 +67,7 @@ pub fn schemas() -> Vec<storage::Schema> {
         auth::saml::SCHEMA,
         search::SCHEMA,
         notify::SCHEMA,
+        points::SCHEMA,
     ]
 }
 
@@ -83,7 +85,14 @@ pub fn core_jobs(instance: &Arc<Instance>) -> Vec<app::JobKind> {
 pub const PERIODIC: &[(&str, i64)] = &[
     (auth::signup::EXPIRY_JOB, 60 * 60 * 1000),
     (retention::SWEEP_JOB, 24 * 60 * 60 * 1000),
+    // Restore points: looks every ten minutes, takes one an hour.
+    (points::JOB, 10 * 60 * 1000),
 ];
+
+/// Jobs of the core that run outside a transaction (long ones).
+pub fn core_outside_jobs(instance: &Arc<Instance>) -> Vec<app::OutsideJobKind> {
+    vec![points::job(Arc::clone(instance))]
+}
 
 /// The web application of an installation: the public API and the web
 /// client of the core and its apps, with a request id on every request.
