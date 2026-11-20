@@ -143,6 +143,130 @@
         ]
       }
     },
+    "/api/v1/admin/oidc/clients": {
+      "get": {
+        "description": "For administrators and owners.",
+        "operationId": "listOidcClients",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "The applications that sign people in with Ortus.",
+        "tags": [
+          "sign-in"
+        ]
+      },
+      "post": {
+        "description": "For administrators and owners.",
+        "operationId": "addOidcClient",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Register an application that signs people in with Ortus: {name, redirect_uris, confidential}. The secret is shown only in this answer.",
+        "tags": [
+          "sign-in"
+        ]
+      }
+    },
+    "/api/v1/admin/oidc/clients/:id": {
+      "delete": {
+        "description": "For administrators and owners.",
+        "operationId": "removeOidcClient",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Remove an application; its tokens stop working.",
+        "tags": [
+          "sign-in"
+        ]
+      }
+    },
     "/api/v1/apps": {
       "get": {
         "description": "For anyone signed in.",

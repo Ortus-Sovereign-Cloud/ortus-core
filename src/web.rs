@@ -178,6 +178,14 @@ pub fn is_served(uri: &str, app_paths: &[String]) -> bool {
         || KNOWN_APP_PATHS.iter().any(|app| under(app))
         || app_paths.iter().any(|app| under(app))
         || PROBES.contains(&path)
+        || path == "/.well-known/openid-configuration"
+        || [
+            "/oauth2/authorize",
+            "/oauth2/token",
+            "/oauth2/userinfo",
+            "/oauth2/jwks",
+        ]
+        .contains(&path)
         || path == "/favicon.svg"
         || path.starts_with("/assets/")
         || path == crate::api::PREFIX

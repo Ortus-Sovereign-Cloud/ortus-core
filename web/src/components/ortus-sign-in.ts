@@ -64,7 +64,10 @@ export class OrtusSignIn extends LitElement {
   }
 
   private go(me: Me): void {
-    location.assign(homeFor(me));
+    // Back to where sign-in was asked for (an application signing in with
+    // Ortus), but only to a path on this site.
+    const back = new URLSearchParams(location.search).get("return");
+    location.assign(back && back.startsWith("/") && !back.startsWith("//") && !back.startsWith("/\\") ? back : homeFor(me));
   }
 
   private async submit(event: SubmitEvent): Promise<void> {

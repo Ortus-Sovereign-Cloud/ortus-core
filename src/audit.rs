@@ -322,39 +322,7 @@ pub async fn verify(store: &dyn AsyncStore) -> StoreResult<Verified> {
 
 /// The value of `name` in a request's query string, percent-decoded.
 pub fn query_param(uri: &str, name: &str) -> Option<String> {
-    let query = uri.split_once('?')?.1.split('#').next()?;
-    query.split('&').find_map(|pair| {
-        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
-        (key == name).then(|| decode(value))
-    })
-}
-
-fn decode(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'+' => out.push(b' '),
-            b'%' if i + 2 < bytes.len() => {
-                // Bytes, not a str slice: raw UTF-8 after % must not panic.
-                match std::str::from_utf8(&bytes[i + 1..i + 3])
-                    .ok()
-                    .and_then(|hex| u8::from_str_radix(hex, 16).ok())
-                    .ok_or(())
-                {
-                    Ok(b) => {
-                        out.push(b);
-                        i += 2;
-                    }
-                    Err(_) => out.push(b'%'),
-                }
-            }
-            b => out.push(b),
-        }
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
+    crate::form::query(uri, name)
 }
 
 mod routes {
@@ -419,20 +387,3 @@ mod routes {
 }
 
 pub use routes::routes;
-
-#[cfg(test)]
-mod tests {
-    use super::query_param;
-
-    #[test]
-    fn query_values_are_decoded_safely() {
-        assert_eq!(
-            Some("auth.".to_string()),
-            query_param("/x?action=auth.&limit=5", "action")
-        );
-        assert_eq!(Some("a b/c".to_string()), query_param("/x?q=a+b%2Fc", "q"));
-        assert_eq!(Some("%é".to_string()), query_param("/x?q=%é", "q"));
-        assert_eq!(Some("%".to_string()), query_param("/x?q=%", "q"));
-        assert_eq!(None, query_param("/x", "q"));
-    }
-}
