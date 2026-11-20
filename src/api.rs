@@ -804,6 +804,7 @@ pub fn reference(routes: &[Route]) -> Value {
             operation["description"] = json!(match route.access {
                 crate::auth::Access::Admin => "For administrators and owners.",
                 crate::auth::Access::Owner => "For owners.",
+                crate::auth::Access::Header => "For apps: `Authorization: Bearer <session token>`, or `Basic` with the address and an app password.",
                 _ => "For anyone signed in.",
             });
         }

@@ -53,6 +53,10 @@ pub enum Access {
     Admin,
     /// Owners only.
     Owner,
+    /// Apps outside the browser (JMAP, CalDAV clients): the handler signs
+    /// the person in from the `Authorization` header with [`by_header`].
+    /// Cookies count for nothing there, so `X-Requested-With` is not needed.
+    Header,
 }
 
 /// The name of the session cookie. With HTTPS it carries the `__Host-`
@@ -188,6 +192,47 @@ pub async fn current(request: &Request, ortus: &Arc<Instance>) -> Option<Session
     .flatten()
 }
 
+/// The person an app outside the browser signs in as, from the
+/// `Authorization` header only: `Bearer <session token>`, or `Basic` with
+/// the address and an app password. Never from a cookie, so another site
+/// cannot borrow a signed-in browser. No `WWW-Authenticate` challenge is
+/// ever sent, so browsers keep no Basic credentials for this site.
+pub async fn by_header(
+    request: &Request,
+    ortus: &Arc<Instance>,
+    client: &str,
+) -> Option<accounts::User> {
+    let value = request.header("authorization")?.value.trim().to_string();
+    let (scheme, rest) = value.split_once(' ')?;
+    if scheme.eq_ignore_ascii_case("bearer") {
+        let token = rest.trim();
+        if token.is_empty() || token.len() > 128 {
+            return None;
+        }
+        let session = sessions::find(
+            ortus.store.as_ref(),
+            token,
+            crate::auth::policy::lifetime(ortus.store.as_ref()).await,
+            crate::program::now_ms(),
+        )
+        .await
+        .ok()
+        .flatten()?;
+        return Some(session.user);
+    }
+    if scheme.eq_ignore_ascii_case("basic") {
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(rest.trim())
+            .ok()?;
+        let decoded = String::from_utf8(decoded).ok()?;
+        let (email, password) = decoded.split_once(':')?;
+        return app_passwords::authenticate(ortus, email, password, client)
+            .await
+            .ok();
+    }
+    None
+}
+
 /// Why a request may not go on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Refusal {
@@ -205,6 +250,9 @@ pub async fn check(
     ortus: &Arc<Instance>,
     access: Access,
 ) -> Result<Option<Session>, Refusal> {
+    if access == Access::Header {
+        return Ok(None);
+    }
     if !from_our_client(request) {
         return Err(Refusal::NotFromClient);
     }
@@ -214,6 +262,7 @@ pub async fn check(
         Access::Signed => accounts::Role::Member,
         Access::Admin => accounts::Role::Admin,
         Access::Owner => accounts::Role::Owner,
+        Access::Header => return Ok(None),
     };
     match session {
         None => Err(Refusal::SignIn),
