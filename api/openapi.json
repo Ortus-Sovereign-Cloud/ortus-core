@@ -267,6 +267,90 @@
         ]
       }
     },
+    "/api/v1/admin/sign-in/providers": {
+      "post": {
+        "description": "For owners.",
+        "operationId": "addSignInProvider",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Add an outside OpenID Connect provider: {id, name, issuer, client_id, client_secret, scopes, link_by_email, create_accounts}. Answers the redirect_uri to register at the provider.",
+        "tags": [
+          "sign-in"
+        ]
+      }
+    },
+    "/api/v1/admin/sign-in/providers/:id": {
+      "delete": {
+        "description": "For owners.",
+        "operationId": "removeSignInProvider",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Remove an outside provider and its links to accounts.",
+        "tags": [
+          "sign-in"
+        ]
+      }
+    },
     "/api/v1/apps": {
       "get": {
         "description": "For anyone signed in.",
@@ -1160,6 +1244,42 @@
         "summary": "Sign in with an address and password. When the account has an authenticator app, answers {next: \"code\", ticket} for the one-time code.",
         "tags": [
           "accounts"
+        ]
+      }
+    },
+    "/api/v1/session/providers": {
+      "get": {
+        "operationId": "listSignInProviders",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "summary": "The outside providers people can sign in with, and where each sign-in starts.",
+        "tags": [
+          "sign-in"
         ]
       }
     },

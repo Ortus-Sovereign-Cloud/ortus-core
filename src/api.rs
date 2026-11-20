@@ -421,6 +421,42 @@ struct SetupBody {
     name: String,
 }
 
+/// Starts a session for `user` (and records the sign-in), returning its
+/// token.
+pub async fn start_session(
+    request: &Request,
+    connection: &ConnectionInfo,
+    ortus: &Arc<Instance>,
+    user: &crate::auth::accounts::User,
+    methods: &str,
+) -> Result<String, ApiError> {
+    let address = crate::auth::client_address(request, connection, &ortus.config.trusted_proxies);
+    let agent = request
+        .header("user-agent")
+        .map(|h| h.value.to_string())
+        .unwrap_or_default();
+    let token = crate::auth::sessions::start(
+        ortus.store.as_ref(),
+        &user.id,
+        methods,
+        &address,
+        &agent,
+        crate::auth::sessions::Lifetime::default(),
+        crate::program::now_ms(),
+    )
+    .await
+    .map_err(|_| ApiError::internal())?;
+    crate::auth::audit(
+        ortus,
+        crate::audit::Event::new("auth.sign_in", crate::audit::Outcome::Done)
+            .by(&user.id)
+            .from(&address)
+            .with(json!({ "methods": methods })),
+    )
+    .await;
+    Ok(token)
+}
+
 /// Starts a session for `user` and answers with the account and the
 /// session cookie (and the token, for apps that are not browsers).
 pub async fn signed_in(
@@ -443,34 +479,9 @@ pub async fn signed_in_with(
     extra: Value,
 ) -> Response {
     let lifetime = crate::auth::sessions::Lifetime::default();
-    let agent = request
-        .header("user-agent")
-        .map(|h| h.value.to_string())
-        .unwrap_or_default();
-    let started = crate::auth::sessions::start(
-        ortus.store.as_ref(),
-        &user.id,
-        methods,
-        &crate::auth::client_address(request, connection, &ortus.config.trusted_proxies),
-        &agent,
-        lifetime,
-        crate::program::now_ms(),
-    )
-    .await;
+    let started = start_session(request, connection, ortus, user, methods).await;
     match started {
         Ok(token) => {
-            crate::auth::audit(
-                ortus,
-                crate::audit::Event::new("auth.sign_in", crate::audit::Outcome::Done)
-                    .by(&user.id)
-                    .from(&crate::auth::client_address(
-                        request,
-                        connection,
-                        &ortus.config.trusted_proxies,
-                    ))
-                    .with(json!({ "methods": methods })),
-            )
-            .await;
             let mut body = user_json(user);
             body["session_token"] = json!(token);
             if let Value::Object(fields) = extra {
@@ -570,6 +581,7 @@ pub fn routes() -> Vec<Route> {
     all.extend(crate::auth::signup::routes());
     all.extend(crate::audit::routes());
     all.extend(crate::oidc::routes::routes());
+    all.extend(crate::auth::external::routes());
     all
 }
 

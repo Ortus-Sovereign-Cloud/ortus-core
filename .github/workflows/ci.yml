@@ -27,6 +27,12 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      idp:
+        # A test identity provider for signing in through an outside
+        # provider (never shipped).
+        image: ghcr.io/navikt/mock-oauth2-server:2.1.10
+        ports:
+          - 58080:8080
       mailpit:
         image: axllent/mailpit:v1.27
         ports:
@@ -55,6 +61,8 @@ jobs:
       ORTUS_TEST_SMTP: 127.0.0.1:1025
       ORTUS_TEST_MAILPIT: http://127.0.0.1:8025
       ORTUS_REQUIRE_SMTP: "1"
+      ORTUS_TEST_IDP: http://127.0.0.1:58080/default
+      ORTUS_REQUIRE_IDP: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

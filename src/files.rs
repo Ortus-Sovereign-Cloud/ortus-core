@@ -171,25 +171,7 @@ impl Files {
 /// container image has no system store at all, and the program then works
 /// the same everywhere.
 fn s3_transport() -> FilesResult<opendal::HttpTransporter> {
-    use std::sync::{Arc, OnceLock};
-    static CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
-    let client = CLIENT
-        .get_or_init(|| {
-            let mut roots = rustls::RootCertStore::empty();
-            roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-            let tls = rustls::ClientConfig::builder_with_provider(Arc::new(
-                rustls::crypto::aws_lc_rs::default_provider(),
-            ))
-            .with_safe_default_protocol_versions()
-            .map_err(|e| e.to_string())?
-            .with_root_certificates(roots)
-            .with_no_client_auth();
-            reqwest::Client::builder()
-                .tls_backend_preconfigured(tls)
-                .build()
-                .map_err(|e| e.to_string())
-        })
-        .clone()
+    let client = crate::http::client()
         .map_err(|e| FilesError::Store(format!("cannot set up the S3 client: {e}")))?;
     Ok(opendal::HttpTransporter::new(
         opendal_http_transport_reqwest::ReqwestTransport::new(client),

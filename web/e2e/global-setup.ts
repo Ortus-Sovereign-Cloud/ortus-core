@@ -18,5 +18,14 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   await expect(page).toHaveURL(/\/$/);
   await expect(page.locator("ortus-shell")).toBeAttached();
   await page.context().storageState({ path: OWNER_STATE });
+  // With a test identity provider, offer it on the sign-in page.
+  const issuer = process.env.ORTUS_TEST_IDP;
+  if (issuer) {
+    const added = await page.request.post("/api/v1/admin/sign-in/providers", {
+      headers: { "X-Requested-With": "ortus" },
+      data: { id: "eid", name: "National eID", issuer, client_id: "ortus", client_secret: "test-secret", link_by_email: true, create_accounts: false },
+    });
+    expect(added.ok()).toBe(true);
+  }
   await browser.close();
 }

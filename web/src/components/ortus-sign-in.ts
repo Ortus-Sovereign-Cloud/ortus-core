@@ -2,7 +2,7 @@ import { LitElement, css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { LocalizeController } from "@lit-material/core/localize.js";
-import { ApiError, homeFor, site, signInWithCode, signInWithPassword, signInWithRecoveryCode, type Me } from "../api.js";
+import { ApiError, homeFor, signInProviders, site, type Provider, signInWithCode, signInWithPassword, signInWithRecoveryCode, type Me } from "../api.js";
 import { t } from "../i18n.js";
 import type { MessageKey } from "../locales/en.js";
 import { passkeysAvailable, signInWithPasskey } from "../passkeys.js";
@@ -18,6 +18,14 @@ const ERRORS: Record<string, MessageKey> = {
   passkey_refused: "signIn.passkeyRefused",
 };
 
+const EXTERNAL: Record<string, MessageKey> = {
+  unreachable: "signIn.externalUnreachable",
+  no_account: "signIn.externalNoAccount",
+  refused: "signIn.externalRefused",
+  expired: "signIn.expired",
+  cancelled: "signIn.externalCancelled",
+};
+
 /** Signing in: address and password, then the one-time code; or a recovery code. */
 @customElement("ortus-sign-in")
 export class OrtusSignIn extends LitElement {
@@ -31,6 +39,16 @@ export class OrtusSignIn extends LitElement {
         flex-direction: column;
         gap: 4px;
         margin-block-start: 16px;
+      }
+      .providers {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-block-start: 16px;
+      }
+      .providers .button {
+        inline-size: 100%;
+        box-sizing: border-box;
       }
       .or {
         margin-block: 20px 0;
@@ -56,11 +74,16 @@ export class OrtusSignIn extends LitElement {
   @state() private error: MessageKey | undefined;
   @state() private busy = false;
   @state() private signupOpen = false;
+  @state() private providers: Provider[] = [];
   private ticket = "";
 
   override connectedCallback(): void {
     super.connectedCallback();
     void site().then((s) => (this.signupOpen = s.signup_open)).catch(() => undefined);
+    void signInProviders().then((p) => (this.providers = p)).catch(() => undefined);
+    // Back from an outside provider that did not let the person in.
+    const external = new URLSearchParams(location.search).get("external");
+    if (external) this.error = EXTERNAL[external] ?? "signIn.failed";
   }
 
   private go(me: Me): void {
@@ -152,6 +175,15 @@ export class OrtusSignIn extends LitElement {
                 <button class="button primary" ?disabled=${this.busy} @click=${this.passkey}>${t(this.localize, "signIn.withPasskey")}</button>
               </div>
               <p class="or">${t(this.localize, "signIn.or")}</p>`
+          : nothing}
+        ${this.step === "password" && this.providers.length
+          ? html`<div class="providers">
+              ${this.providers.map((p) => {
+                const back = new URLSearchParams(location.search).get("return");
+                const href = back ? `${p.start}?return=${encodeURIComponent(back)}` : p.start;
+                return html`<a class="button" href=${href}>${t(this.localize, "signIn.withProvider", { name: p.name })}</a>`;
+              })}
+            </div>`
           : nothing}
         <form @submit=${this.submit}>
           ${this.fields()}

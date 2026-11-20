@@ -9,6 +9,7 @@
 pub mod accounts;
 pub mod cbor;
 pub mod credentials;
+pub mod external;
 pub mod limits;
 pub mod mail_text;
 pub mod passkeys;

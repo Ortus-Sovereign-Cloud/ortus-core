@@ -139,6 +139,16 @@ export async function setPlace(app: string | null): Promise<void> {
   await call("PUT", "/me/place", { app });
 }
 
+export interface Provider {
+  id: string;
+  name: string;
+  start: string;
+}
+
+export async function signInProviders(): Promise<Provider[]> {
+  return (await get<{ providers: Provider[] }>("/session/providers")).providers;
+}
+
 /** Where to go after signing in: the app used last, or the app chooser. */
 export function homeFor(me: Me): string {
   return me.chooser_seen && me.last_app ? `/${me.last_app}` : "/";

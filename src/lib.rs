@@ -13,6 +13,7 @@ pub mod cli;
 pub mod config;
 pub mod files;
 pub mod form;
+pub mod http;
 pub mod instance;
 pub mod interfaces;
 pub mod jobs;
@@ -45,6 +46,7 @@ pub fn schemas() -> Vec<storage::Schema> {
         auth::setup::SCHEMA,
         audit::SCHEMA,
         oidc::SCHEMA,
+        auth::external::SCHEMA,
     ]
 }
 
@@ -68,7 +70,10 @@ pub fn app(instance: Arc<Instance>) -> WithMiddleware<AsyncAppWithState<Arc<Inst
     let apps = instance.apps.clone();
     let paths = apps.iter().map(|a| a.info().path.to_string()).collect();
     web::register(
-        oidc::routes::register(api::register(AsyncAppWithState::new(instance), &apps)),
+        auth::external::register(oidc::routes::register(api::register(
+            AsyncAppWithState::new(instance),
+            &apps,
+        ))),
         &apps,
     )
     .wrap(RequestIdLayer::new())

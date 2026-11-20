@@ -130,3 +130,28 @@ test("a passkey is added on the security page and signs in", async ({ page }) =>
   await expect(page).toHaveURL(/\/$/);
   await expect(page.locator("ortus-shell")).toBeAttached();
 });
+
+test.describe("an outside sign-in service", () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+  test.skip(!process.env.ORTUS_TEST_IDP, "needs a test identity provider (ORTUS_TEST_IDP)");
+
+  test("signs the owner in from the sign-in page", async ({ page }) => {
+    await page.goto("/sign-in");
+    await page.getByRole("link", { name: en["signIn.withProvider"].replace("{name}", "National eID") }).click();
+    // The test provider's own page.
+    await page.locator('input[name="username"]').fill("taras-at-eid");
+    await page.locator('textarea[name="claims"]').fill(JSON.stringify({ email: "taras@ministry.example", email_verified: true }));
+    await page.locator('input[type="submit"]').click();
+    await expect(page).toHaveURL(/localhost:\d+\/$/);
+    await expect(page.locator("ortus-shell")).toBeAttached();
+  });
+
+  for (const locale of LOCALES) {
+    const catalog = CATALOGS[locale.code as Code];
+    test(`says why it did not work, in ${locale.name}`, async ({ page }) => {
+      await page.addInitScript((code) => localStorage.setItem("ortus.locale", code), locale.code);
+      await page.goto("/sign-in?external=no_account");
+      await expect(page.getByRole("alert")).toHaveText(catalog["signIn.externalNoAccount"] as string);
+    });
+  }
+});
