@@ -5,6 +5,7 @@ import { LocalizeController } from "@lit-material/core/localize.js";
 import { ApiError, homeFor, signInWithCode, signInWithPassword, signInWithRecoveryCode, type Me } from "../api.js";
 import { t } from "../i18n.js";
 import type { MessageKey } from "../locales/en.js";
+import { passkeysAvailable, signInWithPasskey } from "../passkeys.js";
 import { MARK, controls, page } from "../ui.js";
 
 type Step = "password" | "code" | "recovery";
@@ -14,6 +15,7 @@ const ERRORS: Record<string, MessageKey> = {
   too_many_requests: "signIn.tooMany",
   second_factor_required: "signIn.needsSecond",
   ticket_expired: "signIn.expired",
+  passkey_refused: "signIn.passkeyRefused",
 };
 
 /** Signing in: address and password, then the one-time code; or a recovery code. */
@@ -29,6 +31,12 @@ export class OrtusSignIn extends LitElement {
         flex-direction: column;
         gap: 4px;
         margin-block-start: 16px;
+      }
+      .or {
+        margin-block: 20px 0;
+        color: var(--ortus-text-3);
+        font-size: 13px;
+        text-align: center;
       }
       .link {
         align-self: flex-start;
@@ -79,6 +87,20 @@ export class OrtusSignIn extends LitElement {
     }
   }
 
+  private async passkey(): Promise<void> {
+    this.busy = true;
+    this.error = undefined;
+    try {
+      this.go(await signInWithPasskey<Me>());
+    } catch (error) {
+      const code = error instanceof ApiError ? error.code : "";
+      // Closing the browser's dialog is not an error to show.
+      this.error = code ? (ERRORS[code] ?? "signIn.failed") : undefined;
+    } finally {
+      this.busy = false;
+    }
+  }
+
   private show(step: Step): void {
     this.step = step;
     this.error = undefined;
@@ -115,11 +137,17 @@ export class OrtusSignIn extends LitElement {
         <span class="mark">${unsafeSVG(MARK)}</span>
         <h1>${t(this.localize, "signIn.title")}</h1>
         <p class="lead">${t(this.localize, lead)}</p>
+        ${this.step === "password" && passkeysAvailable()
+          ? html`<div class="actions">
+                <button class="button primary" ?disabled=${this.busy} @click=${this.passkey}>${t(this.localize, "signIn.withPasskey")}</button>
+              </div>
+              <p class="or">${t(this.localize, "signIn.or")}</p>`
+          : nothing}
         <form @submit=${this.submit}>
           ${this.fields()}
           ${this.error ? html`<p class="error" role="alert">${t(this.localize, this.error)}</p>` : nothing}
           <div class="actions">
-            <button class="button primary" ?disabled=${this.busy}>${t(this.localize, this.step === "code" ? "signIn.confirm" : "signIn.submit")}</button>
+            <button class="button ${this.step === "password" && passkeysAvailable() ? "" : "primary"}" ?disabled=${this.busy}>${t(this.localize, this.step === "code" ? "signIn.confirm" : "signIn.submit")}</button>
           </div>
         </form>
         <div class="other">

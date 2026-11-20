@@ -282,6 +282,132 @@
         ]
       }
     },
+    "/api/v1/me/passkeys": {
+      "post": {
+        "description": "For anyone signed in.",
+        "operationId": "addMyPasskey",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Add the passkey the browser made: {name, clientDataJSON, attestationObject}, base64url.",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/api/v1/me/passkeys/:id": {
+      "delete": {
+        "description": "For anyone signed in.",
+        "operationId": "removeMyPasskey",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Remove one of one's passkeys, unless it is the last way to sign in.",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/api/v1/me/passkeys/options": {
+      "post": {
+        "description": "For anyone signed in.",
+        "operationId": "startMyPasskey",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Options for navigator.credentials.create: a fresh challenge, this installation and the account.",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
     "/api/v1/me/password": {
       "put": {
         "description": "For anyone signed in.",
@@ -563,6 +689,78 @@
           }
         },
         "summary": "Finish signing in with the one-time code and the ticket from the password step.",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/api/v1/session/passkey": {
+      "post": {
+        "operationId": "signInWithPasskey",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "summary": "Sign in with the passkey's answer: {id, clientDataJSON, authenticatorData, signature, userHandle}, base64url.",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/api/v1/session/passkey/options": {
+      "post": {
+        "operationId": "startPasskeySignIn",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "summary": "Options for navigator.credentials.get: a fresh challenge for any passkey of this installation.",
         "tags": [
           "accounts"
         ]

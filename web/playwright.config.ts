@@ -12,11 +12,12 @@ export default defineConfig({
   retries: 0,
   reporter: [["list"]],
   globalSetup: "./e2e/global-setup.ts",
-  use: { baseURL: `http://127.0.0.1:${port}`, viewport: { width: 1440, height: 900 }, colorScheme: "dark", storageState: "test-results/owner.json" },
+  // localhost, not 127.0.0.1: passkeys need a host name.
+  use: { baseURL: `http://localhost:${port}`, viewport: { width: 1440, height: 900 }, colorScheme: "dark", storageState: "test-results/owner.json" },
   projects: [{ name: "chromium", use: { browserName: "chromium" } }],
   webServer: {
     command: `rm -rf test-results/data && ${binary}`,
-    env: { ORTUS_ROLES: "web", ORTUS_WEB_PORT: String(port), ORTUS_DATA_DIR: "test-results/data", ORTUS_SETUP_TOKEN: "e2e-setup-token" },
+    env: { ORTUS_ROLES: "web", ORTUS_WEB_PORT: String(port), ORTUS_DATA_DIR: "test-results/data", ORTUS_SETUP_TOKEN: "e2e-setup-token", ORTUS_PUBLIC_URL: `http://localhost:${port}` },
     url: `http://127.0.0.1:${port}/api/v1/health`,
     reuseExistingServer: false,
     timeout: 30_000,

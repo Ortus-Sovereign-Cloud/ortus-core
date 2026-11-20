@@ -10,6 +10,7 @@ pub mod accounts;
 pub mod cbor;
 pub mod credentials;
 pub mod limits;
+pub mod passkeys;
 pub mod routes;
 pub mod sessions;
 pub mod setup;

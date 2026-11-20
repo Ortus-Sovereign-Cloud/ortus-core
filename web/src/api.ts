@@ -24,7 +24,7 @@ export class ApiError extends Error {
   }
 }
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   // Every change says it comes from the Ortus client; other sites cannot.
   if (method !== "GET") headers["X-Requested-With"] = "ortus";

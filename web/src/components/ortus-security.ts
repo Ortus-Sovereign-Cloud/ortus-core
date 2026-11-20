@@ -5,6 +5,7 @@ import { LocalizeController } from "@lit-material/core/localize.js";
 import { ApiError, confirmAuthenticator, mySecurity, newRecoveryKit, removeAuthenticator, setPassword, startAuthenticator, type Security } from "../api.js";
 import { t } from "../i18n.js";
 import type { MessageKey } from "../locales/en.js";
+import { addPasskey, passkeysAvailable, removePasskey } from "../passkeys.js";
 import { controls } from "../ui.js";
 
 /** My settings › Sign-in and security: password, authenticator app, recovery kit. */
@@ -73,6 +74,20 @@ export class OrtusSecurity extends LitElement {
         padding: 0;
         list-style: none;
       }
+      .keys {
+        margin: 0 0 8px;
+        padding: 0;
+        list-style: none;
+      }
+      .keys li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-block-size: 56px;
+        border-block-end: 1px solid var(--ortus-line);
+        font-size: 15px;
+      }
       .note {
         color: var(--ortus-text-2);
         font-size: 14px;
@@ -134,6 +149,20 @@ export class OrtusSecurity extends LitElement {
     );
   }
 
+  private addKey(event: SubmitEvent): void {
+    event.preventDefault();
+    const form = event.target as HTMLFormElement;
+    const name = String(new FormData(form).get("name") ?? "").trim();
+    void this.act(
+      async () => {
+        await addPasskey(name || t(this.localize, "security.passkeyNameHint"));
+        form.reset();
+      },
+      "security.passkeyAdded",
+      { passkey_refused: "security.passkeyRefused", conflict: "security.passkeyExists" },
+    );
+  }
+
   private download(): void {
     const text = `${t(this.localize, "security.kitFile")}\n\n${(this.codes ?? []).join("\n")}\n`;
     const link = document.createElement("a");
@@ -150,6 +179,28 @@ export class OrtusSecurity extends LitElement {
       <h1>${t(this.localize, "security.title")}</h1>
       ${this.message ? html`<p class=${this.message.error ? "error" : "note"} role=${this.message.error ? "alert" : "status"}>${t(this.localize, this.message.key)}</p>` : nothing}
       <div class="cards">
+        <section aria-labelledby="passkeys">
+          <h2 id="passkeys">${t(this.localize, "security.passkeys")}</h2>
+          <p class="state ${s.passkeys.length ? "on" : ""}">${t(this.localize, "security.passkeyCount", { count: s.passkeys.length })}</p>
+          <p class="note">${t(this.localize, "security.passkeysLead")}</p>
+          <ul class="keys">
+            ${s.passkeys.map(
+              (key) => html`<li>
+                <span>${key.name}</span>
+                <button class="button" @click=${() => this.act(() => removePasskey(key.id), "security.passkeyRemoved", { conflict: "security.lastMethod" })}>
+                  ${t(this.localize, "security.remove")}
+                </button>
+              </li>`,
+            )}
+          </ul>
+          ${passkeysAvailable()
+            ? html`<form @submit=${this.addKey}>
+                <label for="key-name">${t(this.localize, "security.passkeyName")}</label>
+                <input id="key-name" name="name" maxlength="100" placeholder=${t(this.localize, "security.passkeyNameHint")} />
+                <div class="row"><button class="button">${t(this.localize, "security.addPasskey")}</button></div>
+              </form>`
+            : html`<p class="note">${t(this.localize, "security.noPasskeys")}</p>`}
+        </section>
         <section aria-labelledby="password">
           <h2 id="password">${t(this.localize, "security.password")}</h2>
           <p class="state ${s.password ? "on" : ""}">${t(this.localize, s.password ? "security.passwordOn" : "security.passwordOff")}</p>

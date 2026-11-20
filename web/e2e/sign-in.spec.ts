@@ -110,3 +110,23 @@ for (const locale of LOCALES) {
     await expect(page.locator("html")).toHaveAttribute("dir", locale.dir);
   });
 }
+
+test("a passkey is added on the security page and signs in", async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("WebAuthn.enable");
+  await cdp.send("WebAuthn.addVirtualAuthenticator", {
+    options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true },
+  });
+  await page.goto("/settings/security");
+  await page.getByLabel(en["security.passkeyName"]).fill("Work laptop");
+  await page.getByRole("button", { name: en["security.addPasskey"] }).click();
+  await expect(page.getByText(en["security.passkeyAdded"])).toBeVisible();
+  await expect(page.locator("ortus-security .keys li")).toContainText("Work laptop");
+
+  // Signed out, the same browser (and its authenticator) signs in again.
+  await page.context().clearCookies();
+  await page.goto("/sign-in");
+  await page.getByRole("button", { name: en["signIn.withPasskey"] }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.locator("ortus-shell")).toBeAttached();
+});

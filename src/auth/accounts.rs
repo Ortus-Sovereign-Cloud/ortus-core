@@ -55,6 +55,16 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         blocked_until BIGINT NOT NULL
     )",
     },
+    Migration {
+        version: 3,
+        name: "passkey challenges",
+        sql: "CREATE TABLE core_webauthn_challenges (
+        challenge TEXT PRIMARY KEY,
+        user_id TEXT,
+        purpose TEXT NOT NULL,
+        expires_at BIGINT NOT NULL
+    )",
+    },
 ];
 
 /// What a person may do in the installation as a whole.
