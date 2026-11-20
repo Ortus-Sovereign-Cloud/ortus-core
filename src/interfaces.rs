@@ -33,6 +33,14 @@ pub trait Calendar: Send + Sync {
         ics: &'a str,
     ) -> BoxFuture<'a, Result<Invitation, String>>;
 
+    /// The person's copy of the event with this UID, as an invitation
+    /// (their answer, when, whether it is cancelled), if they have it.
+    fn invitation<'a>(
+        &'a self,
+        user: &'a str,
+        uid: &'a str,
+    ) -> BoxFuture<'a, Result<Option<Invitation>, String>>;
+
     /// The person answers an invitation: ACCEPTED, TENTATIVE or DECLINED.
     fn respond<'a>(
         &'a self,
