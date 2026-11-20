@@ -370,6 +370,18 @@ pub async fn signed_in(
     user: &crate::auth::accounts::User,
     methods: &str,
 ) -> Response {
+    signed_in_with(request, connection, ortus, user, methods, json!({})).await
+}
+
+/// As [`signed_in`], with `extra` fields in the answer.
+pub async fn signed_in_with(
+    request: &Request,
+    connection: &ConnectionInfo,
+    ortus: &Arc<Instance>,
+    user: &crate::auth::accounts::User,
+    methods: &str,
+    extra: Value,
+) -> Response {
     let lifetime = crate::auth::sessions::Lifetime::default();
     let agent = request
         .header("user-agent")
@@ -389,6 +401,11 @@ pub async fn signed_in(
         Ok(token) => {
             let mut body = user_json(user);
             body["session_token"] = json!(token);
+            if let Value::Object(fields) = extra {
+                for (key, value) in fields {
+                    body[key] = value;
+                }
+            }
             with_headers(
                 ok(&body),
                 vec![crate::auth::set_cookie(
@@ -436,6 +453,12 @@ fn signed_in_schema() -> Value {
 
 /// Every operation of the core API. Apps add their own.
 pub fn routes() -> Vec<Route> {
+    let mut all = core_routes();
+    all.extend(crate::auth::routes::routes());
+    all
+}
+
+fn core_routes() -> Vec<Route> {
     vec![
         Route {
             method: Method::Get,

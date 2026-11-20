@@ -284,3 +284,78 @@ fn the_first_owner_is_created_once_with_the_setup_link() {
         block_on(ortus_core::auth::setup::prepare(&instance, None, true, 3)).unwrap()
     );
 }
+
+fn credentials_and_limits(store: Arc<dyn AsyncStore>) {
+    use ortus_core::auth::{credentials, limits};
+    installed(&store);
+    let s = store.as_ref();
+    let user = block_on(accounts::create(
+        s,
+        &NewUser {
+            email: "marek@ministry.example",
+            name: "Marek",
+            role: Role::Member,
+            state: State::Active,
+            expires_at: None,
+        },
+        1,
+    ))
+    .unwrap();
+    block_on(credentials::set_password(
+        s,
+        &user.id,
+        "a long enough password",
+        2,
+    ))
+    .unwrap();
+    assert!(block_on(credentials::check_password(
+        s,
+        &user.id,
+        "a long enough password",
+        3
+    ))
+    .unwrap());
+    assert!(!block_on(credentials::check_password(s, &user.id, "not it at all", 3)).unwrap());
+    let codes = block_on(credentials::new_recovery_kit(s, &user.id, 4)).unwrap();
+    assert_eq!(
+        Some(9),
+        block_on(credentials::use_recovery_code(s, &user.id, &codes[0], 5)).unwrap()
+    );
+    assert_eq!(
+        None,
+        block_on(credentials::use_recovery_code(s, &user.id, &codes[0], 6)).unwrap()
+    );
+    assert_eq!(2, block_on(credentials::all(s, &user.id)).unwrap().len());
+
+    let keys = limits::keys("marek@ministry.example", "10.1.1.1");
+    for _ in 0..4 {
+        block_on(limits::failed(s, &keys, 100)).unwrap();
+    }
+    assert_eq!(
+        None,
+        block_on(limits::blocked_until(s, &keys[0], 100)).unwrap()
+    );
+    block_on(limits::failed(s, &keys, 100)).unwrap();
+    assert_eq!(
+        Some(30_100),
+        block_on(limits::blocked_until(s, &keys[1], 100)).unwrap()
+    );
+    block_on(limits::succeeded(s, &keys)).unwrap();
+    assert_eq!(
+        None,
+        block_on(limits::blocked_until(s, &keys[0], 100)).unwrap()
+    );
+}
+
+#[test]
+fn credentials_and_limits_on_sqlite() {
+    let fresh = common::sqlite().unwrap();
+    credentials_and_limits((fresh.open)());
+}
+
+#[test]
+fn credentials_and_limits_on_postgres() {
+    if let Some(fresh) = common::postgres() {
+        credentials_and_limits((fresh.open)());
+    }
+}

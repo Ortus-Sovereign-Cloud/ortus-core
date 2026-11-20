@@ -64,6 +64,57 @@ export async function createOwner(token: string, name: string, email: string): P
   return call<Me>("POST", "/setup", { token, name, email });
 }
 
+export type PasswordStep = { next: "code"; ticket: string };
+
+export async function signInWithPassword(email: string, password: string): Promise<PasswordStep> {
+  return call<PasswordStep>("POST", "/session/password", { email, password });
+}
+
+export async function signInWithCode(ticket: string, code: string): Promise<Me> {
+  return call<Me>("POST", "/session/code", { ticket, code });
+}
+
+export async function signInWithRecoveryCode(email: string, code: string): Promise<Me & { recovery_codes_left: number }> {
+  return call("POST", "/session/recovery", { email, code });
+}
+
+export interface Security {
+  password: boolean;
+  totp: boolean;
+  recovery_codes_left: number;
+  passkeys: { id: string; name: string; created_at: number; last_used_at: number | null }[];
+  session_methods: string;
+}
+
+export async function mySecurity(): Promise<Security> {
+  return get<Security>("/me/security");
+}
+
+export async function setPassword(password: string, current?: string): Promise<void> {
+  await call("PUT", "/me/password", { password, current });
+}
+
+export async function startAuthenticator(): Promise<{ secret: string; uri: string; qr_svg: string }> {
+  return call("POST", "/me/totp");
+}
+
+export async function confirmAuthenticator(code: string): Promise<void> {
+  await call("POST", "/me/totp/confirm", { code });
+}
+
+export async function removeAuthenticator(): Promise<void> {
+  await call("DELETE", "/me/totp");
+}
+
+export async function newRecoveryKit(): Promise<string[]> {
+  return (await call<{ codes: string[] }>("POST", "/me/recovery-kit")).codes;
+}
+
+/** Where to go after signing in: the app used last, or the app chooser. */
+export function homeFor(me: Me): string {
+  return me.chooser_seen && me.last_app ? `/${me.last_app}` : "/";
+}
+
 export async function signOut(): Promise<void> {
   await call("POST", "/session/sign-out");
 }

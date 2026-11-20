@@ -7,6 +7,7 @@ import { LOCALES, setLocale, t } from "../i18n.js";
 import { APP_ICONS, tileTints } from "../icons.js";
 import type { MessageKey } from "../locales/en.js";
 import "./ortus-app-switcher.js";
+import "./ortus-security.js";
 
 /** How many apps the rail shows before "All apps". */
 const RAIL_APPS = 6;
@@ -287,6 +288,9 @@ export class OrtusShell extends LitElement {
 
   private screen() {
     const path = location.pathname;
+    if (path === "/settings/security") {
+      return html`<ortus-security></ortus-security>`;
+    }
     if (path === "/" || path === "/apps" || this.apps === undefined) {
       return html`<ortus-app-switcher .apps=${this.apps} .failed=${this.failed} @retry=${() => this.load()}></ortus-app-switcher>`;
     }

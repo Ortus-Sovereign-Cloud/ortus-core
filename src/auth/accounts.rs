@@ -2,10 +2,11 @@
 
 use crate::storage::{AsyncStore, AsyncTx, Migration, Row, StoreError, StoreResult, Value};
 
-pub(super) const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "accounts, credentials and sessions",
-    sql: "CREATE TABLE core_users (
+pub(super) const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "accounts, credentials and sessions",
+        sql: "CREATE TABLE core_users (
         id TEXT PRIMARY KEY,
         email TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
@@ -38,7 +39,23 @@ pub(super) const MIGRATIONS: &[Migration] = &[Migration {
         agent TEXT NOT NULL
     );
     CREATE INDEX core_sessions_user ON core_sessions (user_id)",
-}];
+    },
+    Migration {
+        version: 2,
+        name: "sign-in tickets and limits",
+        sql: "CREATE TABLE core_signin_tickets (
+        token_hash TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES core_users (id),
+        methods TEXT NOT NULL,
+        expires_at BIGINT NOT NULL
+    );
+    CREATE TABLE core_signin_limits (
+        key TEXT PRIMARY KEY,
+        failures BIGINT NOT NULL,
+        blocked_until BIGINT NOT NULL
+    )",
+    },
+];
 
 /// What a person may do in the installation as a whole.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]

@@ -282,6 +282,364 @@
         ]
       }
     },
+    "/api/v1/me/password": {
+      "put": {
+        "description": "For anyone signed in.",
+        "operationId": "setMyPassword",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Set or change one's password (the current one is needed to change it).",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/api/v1/me/recovery-kit": {
+      "post": {
+        "description": "For anyone signed in.",
+        "operationId": "newMyRecoveryKit",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Make a new recovery kit; the old codes stop working. The codes are shown only in this answer.",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/api/v1/me/security": {
+      "get": {
+        "description": "For anyone signed in.",
+        "operationId": "getMySecurity",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "How the signed-in person can sign in: password, authenticator app, recovery codes left, passkeys.",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/api/v1/me/totp": {
+      "delete": {
+        "description": "For anyone signed in.",
+        "operationId": "removeMyAuthenticator",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Remove the authenticator app.",
+        "tags": [
+          "accounts"
+        ]
+      },
+      "post": {
+        "description": "For anyone signed in.",
+        "operationId": "startMyAuthenticator",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Start adding an authenticator app: a new secret and its otpauth address.",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/api/v1/me/totp/confirm": {
+      "post": {
+        "description": "For anyone signed in.",
+        "operationId": "confirmMyAuthenticator",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Finish adding the authenticator app with its first code.",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/api/v1/session/code": {
+      "post": {
+        "operationId": "signInWithCode",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "summary": "Finish signing in with the one-time code and the ticket from the password step.",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/api/v1/session/password": {
+      "post": {
+        "operationId": "signInWithPassword",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "summary": "Sign in with an address and password. When the account has an authenticator app, answers {next: \"code\", ticket} for the one-time code.",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/api/v1/session/recovery": {
+      "post": {
+        "operationId": "signInWithRecoveryCode",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "summary": "Sign in with a recovery code. Each code works once.",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
     "/api/v1/session/sign-out": {
       "post": {
         "operationId": "signOut",
