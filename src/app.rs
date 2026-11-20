@@ -128,6 +128,17 @@ pub trait App: Send + Sync + 'static {
 
     /// Jobs to run on a schedule: (kind, every so many milliseconds, at
     /// least a minute). The kind must be one of [`App::jobs`].
+    /// The app's WebDAV handler (CalDAV, CardDAV), mounted at `/dav/<id>/`.
+    fn dav(&self) -> Option<crate::dav::DavHandler> {
+        None
+    }
+
+    /// `/.well-known/` names the app answers, with where they lead
+    /// (`("caldav", "/dav/calendar/")`).
+    fn well_known(&self) -> Vec<(&'static str, &'static str)> {
+        Vec::new()
+    }
+
     /// Where the app keeps sealed values, so a key rotation re-seals them.
     fn sealed(&self) -> Vec<crate::secrets::Place> {
         Vec::new()

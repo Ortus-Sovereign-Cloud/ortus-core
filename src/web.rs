@@ -174,12 +174,25 @@ pub const KNOWN_APP_PATHS: &[&str] = &[
 /// for a screen, an embedded file, the API or the health probe.
 pub struct OnlyOrtusPaths {
     app_paths: Vec<String>,
+    dav_ids: Vec<String>,
+    well_known: Vec<String>,
 }
 
 impl OnlyOrtusPaths {
     /// For the core and apps living at `app_paths` (as `/mail`).
     pub fn new(app_paths: Vec<String>) -> Self {
-        Self { app_paths }
+        Self {
+            app_paths,
+            dav_ids: Vec::new(),
+            well_known: Vec::new(),
+        }
+    }
+
+    /// Also `/dav/<id>…` of these apps, and these `/.well-known/` names.
+    pub fn with_dav(mut self, dav_ids: Vec<String>, well_known: Vec<String>) -> Self {
+        self.dav_ids = dav_ids;
+        self.well_known = well_known;
+        self
     }
 }
 
@@ -228,7 +241,18 @@ impl Middleware for OnlyOrtusPaths {
         connection: &ConnectionInfo,
         next: &dyn Application,
     ) -> Result<Response, String> {
-        if is_served(&request.request_uri, &self.app_paths) {
+        let path = request
+            .request_uri
+            .split(['?', '#'])
+            .next()
+            .unwrap_or_default();
+        let lowered = path.to_ascii_lowercase();
+        let tricks = ["..", "%2e", "%2f", "%5c", "\\", "//", "%00"]
+            .iter()
+            .any(|t| lowered.contains(t));
+        if is_served(&request.request_uri, &self.app_paths)
+            || (!tricks && crate::dav::served(path, &self.dav_ids, &self.well_known))
+        {
             next.execute(request, connection)
         } else {
             Ok(not_found())

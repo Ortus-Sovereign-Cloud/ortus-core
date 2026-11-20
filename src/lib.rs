@@ -11,6 +11,7 @@ pub mod auth;
 pub mod backup;
 pub mod cli;
 pub mod config;
+pub mod dav;
 pub mod files;
 pub mod first_run;
 pub mod form;
@@ -87,9 +88,20 @@ pub const PERIODIC: &[(&str, i64)] = &[
 pub fn app(instance: Arc<Instance>) -> WithMiddleware<AsyncAppWithState<Arc<Instance>>> {
     let apps = instance.apps.clone();
     let paths = apps.iter().map(|a| a.info().path.to_string()).collect();
+    let dav_ids = apps
+        .iter()
+        .filter(|a| a.dav().is_some())
+        .map(|a| a.info().id.to_string())
+        .collect();
+    let well_known = apps
+        .iter()
+        .flat_map(|a| a.well_known())
+        .map(|(name, _)| name.to_string())
+        .collect();
     let routes = api::register(AsyncAppWithState::new(instance), &apps);
     let routes = auth::saml::register(auth::external::register(oidc::routes::register(routes)));
+    let routes = dav::register(routes, &apps);
     web::register(routes, &apps)
         .wrap(RequestIdLayer::new())
-        .wrap(web::OnlyOrtusPaths::new(paths))
+        .wrap(web::OnlyOrtusPaths::new(paths).with_dav(dav_ids, well_known))
 }
