@@ -82,13 +82,74 @@ pub async fn succeeded(store: &dyn AsyncStore, keys: &[String]) -> StoreResult<(
     Ok(())
 }
 
+/// Where tries come from, as one: an IPv4 address, or an IPv6 /64 (one
+/// network hands out a whole /64).
+pub fn network(client_ip: &str) -> String {
+    match client_ip.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V6(v6)) if v6.to_ipv4_mapped().is_none() => {
+            let s = v6.segments();
+            format!("{:x}:{:x}:{:x}:{:x}::/64", s[0], s[1], s[2], s[3])
+        }
+        Ok(std::net::IpAddr::V6(v6)) => v6
+            .to_ipv4_mapped()
+            .map_or(client_ip.to_string(), |v4| v4.to_string()),
+        _ => client_ip.to_string(),
+    }
+}
+
 /// The keys of a sign-in attempt: the address tried and where from.
 pub fn keys(email: &str, client_ip: &str) -> Vec<String> {
+    let from = network(client_ip);
     vec![
         // The address together with where the tries come from: a stranger
         // guessing someone's password slows down without locking that
         // person out of their own sign-in.
-        format!("email:{}|{client_ip}", email.trim().to_lowercase()),
-        format!("ip:{client_ip}"),
+        format!("email:{}|{from}", email.trim().to_lowercase()),
+        format!("ip:{from}"),
     ]
+}
+
+/// Tries on one account from anywhere, counted without ever blocking it:
+/// past a few dozen, each try waits a little longer (up to five seconds),
+/// so a guesser spread over many networks stays slow.
+pub async fn account_delay(
+    store: &dyn AsyncStore,
+    email: &str,
+) -> StoreResult<std::time::Duration> {
+    let key = format!("account:{}", email.trim().to_lowercase());
+    store
+        .execute(
+            "INSERT INTO core_signin_limits (key, failures, blocked_until) VALUES ($1, 0, 0) ON CONFLICT (key) DO NOTHING",
+            &[key.as_str().into()],
+        )
+        .await?;
+    store
+        .execute(
+            "UPDATE core_signin_limits SET failures = failures + 1 WHERE key = $1",
+            &[key.as_str().into()],
+        )
+        .await?;
+    let tries = store
+        .query(
+            "SELECT failures FROM core_signin_limits WHERE key = $1",
+            &[key.as_str().into()],
+        )
+        .await?
+        .first()
+        .and_then(|r| r.int(0))
+        .unwrap_or(0);
+    Ok(std::time::Duration::from_millis(
+        ((tries - 30).max(0) * 250).min(5000) as u64,
+    ))
+}
+
+/// The account's count starts again (a sign-in went right).
+pub async fn account_ok(store: &dyn AsyncStore, email: &str) -> StoreResult<()> {
+    store
+        .execute(
+            "DELETE FROM core_signin_limits WHERE key = $1",
+            &[format!("account:{}", email.trim().to_lowercase()).into()],
+        )
+        .await?;
+    Ok(())
 }

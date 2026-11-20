@@ -32,10 +32,11 @@ use crate::files::{Files, S3Settings};
 use crate::instance::Instance;
 use crate::storage::{AsyncStore, Migration, Schema};
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "restore points: the file index and the points taken",
-    sql: "CREATE TABLE core_backup_index (
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "restore points: the file index and the points taken",
+        sql: "CREATE TABLE core_backup_index (
         key TEXT PRIMARY KEY,
         size BIGINT NOT NULL,
         sha256 TEXT NOT NULL
@@ -54,7 +55,17 @@ const MIGRATIONS: &[Migration] = &[Migration {
         duration_ms BIGINT NOT NULL,
         detail TEXT NOT NULL
     )",
-}];
+    },
+    Migration {
+        version: 2,
+        name: "restore points: one taker or pruner at a time",
+        sql: "CREATE TABLE core_points_lease (
+        id BIGINT PRIMARY KEY,
+        until_ms BIGINT NOT NULL
+    );
+    INSERT INTO core_points_lease (id, until_ms) VALUES (1, 0)",
+    },
+];
 
 pub const SCHEMA: Schema = Schema {
     app: "core.points",
@@ -134,6 +145,75 @@ pub fn name_at(ms: i64) -> String {
     )
 }
 
+/// How long one taker or pruner may hold the backup store.
+const LEASE: i64 = 6 * HOUR;
+
+/// Claims the backup store for taking or pruning (one at a time, across
+/// workers and the "take one now" button). False when someone has it.
+pub async fn claim(instance: &Instance) -> Result<bool, BackupError> {
+    let now = crate::program::now_ms();
+    Ok(instance
+        .store
+        .execute(
+            "UPDATE core_points_lease SET until_ms = $1 WHERE id = 1 AND until_ms <= $2",
+            &[(now + LEASE).into(), now.into()],
+        )
+        .await?
+        == 1)
+}
+
+pub async fn release(instance: &Instance) {
+    let _ = instance
+        .store
+        .execute(
+            "UPDATE core_points_lease SET until_ms = 0 WHERE id = 1",
+            &[],
+        )
+        .await;
+}
+
+/// When a point was taken, from its name ("20261120-180000").
+pub fn time_of(name: &str) -> Option<i64> {
+    let (date, time) = name.split_once('-')?;
+    if date.len() != 8 || time.len() != 6 {
+        return None;
+    }
+    let num = |s: &str| s.parse::<i64>().ok();
+    let (y, m, d) = (num(&date[..4])?, num(&date[4..6])?, num(&date[6..])?);
+    let (hh, mm, ss) = (num(&time[..2])?, num(&time[2..4])?, num(&time[4..])?);
+    // Days since 1970 from a civil date (Howard Hinnant's algorithm).
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    Some((days * 86_400 + hh * 3600 + mm * 60 + ss) * 1000)
+}
+
+/// The backup store's own id (a file in it). The file index is only good
+/// for the store it was made against: a new or emptied store, or another
+/// one, starts the index again.
+async fn same_store(instance: &Instance, dest: &Files) -> Result<bool, BackupError> {
+    let id = match dest.get("destination.id").await? {
+        Some(id) => String::from_utf8_lossy(&id).trim().to_string(),
+        None => {
+            let id = crate::auth::random_hex(16);
+            dest.put("destination.id", id.as_bytes()).await?;
+            id
+        }
+    };
+    let s = instance.store.as_ref();
+    let known = crate::auth::policy::setting(s, "backup_destination").await?;
+    if known.as_deref() == Some(id.as_str()) {
+        return Ok(true);
+    }
+    s.execute("DELETE FROM core_backup_index", &[]).await?;
+    crate::auth::policy::set_setting(s, "backup_destination", &id).await?;
+    Ok(false)
+}
+
 /// Takes a point now. `full` reads every file again (else the index
 /// spares unchanged ones).
 pub async fn take(
@@ -145,6 +225,8 @@ pub async fn take(
     let store = instance.store.as_ref();
     let name = name_at(now);
     let base = format!("points/{name}");
+    // Another store than the index knows: every file read again.
+    let full = !same_store(instance, dest).await? || full;
     // The tables, from one consistent snapshot.
     let engine = store.engine();
     let mut tx = store.begin_read().await?;
@@ -263,7 +345,10 @@ pub async fn take(
     let text = serde_json::to_string_pretty(&manifest).map_err(|e| BackupError(e.to_string()))?;
     dest.put(
         &format!("{base}/manifest.seal"),
-        instance.keys.seal_text(&sha256(text.as_bytes())).as_bytes(),
+        instance
+            .keys
+            .seal_text(&sealed(&name, text.as_bytes()))
+            .as_bytes(),
     )
     .await?;
     dest.put(&format!("{base}/manifest.json"), text.as_bytes())
@@ -361,15 +446,21 @@ pub async fn prune(instance: &Instance, dest: &Files, now: i64) -> Result<usize,
             .await?;
         removed += 1;
     }
-    // Leftovers of points cut short (no manifest) go too.
-    let whole: BTreeSet<&str> = points.iter().map(|(n, _)| n.as_str()).collect();
-    for key in dest.list("points/").await? {
+    // Leftovers of points cut short (no manifest, and older than a take
+    // could last) go too.
+    let all = dest.list("points/").await?;
+    let with_manifest: BTreeSet<&str> = all
+        .iter()
+        .filter_map(|k| k.strip_prefix("points/")?.strip_suffix("/manifest.json"))
+        .collect();
+    for key in &all {
         let name = key
             .strip_prefix("points/")
             .and_then(|k| k.split('/').next())
             .unwrap_or_default();
-        if !whole.contains(name) {
-            dest.delete(&key).await?;
+        let old = time_of(name).is_some_and(|t| now - t > LEASE);
+        if !with_manifest.contains(name) && old {
+            dest.delete(key).await?;
         }
     }
     if removed > 0 {
@@ -404,6 +495,12 @@ pub async fn prune(instance: &Instance, dest: &Files, now: i64) -> Result<usize,
     Ok(removed)
 }
 
+/// What a point's seal covers: its name (an older manifest cannot pass
+/// for a newer point) and its manifest's checksum.
+fn sealed(name: &str, manifest: &[u8]) -> String {
+    format!("{name}:{}", sha256(manifest))
+}
+
 /// Whether point `name` is as this installation took it: its manifest's
 /// checksum, sealed with this installation's keys, matches.
 pub async fn verify(
@@ -431,7 +528,7 @@ pub async fn verify(
     let opened = keys
         .open_text(&String::from_utf8_lossy(&seal))
         .map_err(|_| refused())?;
-    if opened != sha256(&text) {
+    if opened != sealed(name, &text) {
         return Err(refused());
     }
     Ok(())
@@ -506,14 +603,20 @@ pub async fn run(instance: &Instance) -> Result<(), String> {
     if last.is_some_and(|t| now - t < HOUR - 5 * 60_000) {
         return Ok(());
     }
+    // One at a time: another worker (or the button) may be at it.
+    if !claim(instance).await.map_err(|e| e.to_string())? {
+        return Ok(());
+    }
     let dest = destination(&instance.config.data_dir)?;
     let full = last.is_none_or(|t| t.div_euclid(DAY) != now.div_euclid(DAY));
-    let point = take(instance, &dest, now, full)
-        .await
-        .map_err(|e| e.to_string())?;
-    let removed = prune(instance, &dest, now)
-        .await
-        .map_err(|e| e.to_string())?;
+    let done = async {
+        let point = take(instance, &dest, now, full).await?;
+        let removed = prune(instance, &dest, now).await?;
+        Ok::<_, BackupError>((point, removed))
+    }
+    .await;
+    release(instance).await;
+    let (point, removed) = done.map_err(|e| e.to_string())?;
     crate::audit::record(s, &crate::audit::Event::new("backup.point_taken", crate::audit::Outcome::Done).with(json!({"point": point.name, "files": point.files, "bytes": point.bytes, "pruned": removed})), now)
         .await
         .map_err(|e| e.to_string())?;
@@ -525,7 +628,21 @@ pub async fn run(instance: &Instance) -> Result<(), String> {
         .first()
         .and_then(|r| r.int(0));
     if tested.is_none_or(|t| now - t >= TEST_EVERY) {
-        test_restore(instance, &dest, &point.name).await;
+        // Its own job, so the worker's other jobs need not wait for it.
+        let id = format!("restore-test-{}", name_at(now).get(..6).unwrap_or_default());
+        crate::jobs::enqueue(
+            s,
+            &crate::jobs::NewJob {
+                id: &id,
+                kind: TEST_JOB,
+                payload: &point.name,
+                run_at: now,
+                max_attempts: 1,
+            },
+            now,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -563,7 +680,21 @@ pub fn test_job(instance: Arc<Instance>) -> crate::app::OutsideJobKind {
                 } else {
                     wanted
                 };
+                // Not while a point is being taken or pruned (its files
+                // could go under the test): wait up to half an hour.
+                let mut held = false;
+                for _ in 0..180 {
+                    if claim(&instance).await.map_err(|e| e.to_string())? {
+                        held = true;
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                }
+                if !held {
+                    return Err("the backup store stayed busy".into());
+                }
                 test_restore(&instance, &dest, &name).await;
+                release(&instance).await;
                 Ok(())
             })
         }),
@@ -626,9 +757,17 @@ async fn take_now(
     let dest =
         destination(&instance.config.data_dir).map_err(|_| crate::api::ApiError::internal())?;
     let now = crate::program::now_ms();
-    let point = take(instance, &dest, now, false)
+    if !claim(instance)
         .await
-        .map_err(|e| crate::api::ApiError::bad_request(e.to_string()))?;
+        .map_err(|_| crate::api::ApiError::internal())?
+    {
+        return Err(crate::api::ApiError::conflict(
+            "A restore point is being taken; try again in a while.",
+        ));
+    }
+    let taken = take(instance, &dest, now, false).await;
+    release(instance).await;
+    let point = taken.map_err(|e| crate::api::ApiError::bad_request(e.to_string()))?;
     crate::auth::audit(
         instance,
         crate::audit::Event::new("backup.point_taken", crate::audit::Outcome::Done)
@@ -749,12 +888,18 @@ impl Snapshot {
                     .get(&format!("{}/files.jsonl", self.base))
                     .await
                     .map_err(|e| e.to_string())?
-                    .unwrap_or_default();
+                    .ok_or("the point lacks its list of files")?;
+                // The list as the (sealed) manifest names it.
+                if sha256(&listing) != self.manifest.files.sha256 {
+                    return Err("the point's list of files is damaged".to_string());
+                }
                 let mut map = BTreeMap::new();
                 for line in String::from_utf8_lossy(&listing).lines() {
-                    if let Ok(f) = serde_json::from_str::<FileLine>(line) {
-                        map.insert(f.key, f.sha256);
+                    let f = serde_json::from_str::<FileLine>(line).map_err(|e| e.to_string())?;
+                    if f.sha256.len() != 64 || !f.sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
+                        return Err(format!("{}: not a checksum", f.sha256));
                     }
+                    map.insert(f.key, f.sha256);
                 }
                 Ok::<_, String>(map)
             })
@@ -1005,6 +1150,14 @@ pub struct Tested {
 /// it sealed. Timed and recorded; the scratch installation goes after.
 pub async fn test_restore(instance: &Instance, dest: &Files, name: &str) -> Tested {
     let started = std::time::Instant::now();
+    // Scratch installations a crash left behind.
+    if let Ok(entries) = std::fs::read_dir(&instance.config.data_dir) {
+        for e in entries.flatten() {
+            if e.file_name().to_string_lossy().starts_with("restore-test-") {
+                let _ = std::fs::remove_dir_all(e.path());
+            }
+        }
+    }
     let scratch = instance
         .config
         .data_dir

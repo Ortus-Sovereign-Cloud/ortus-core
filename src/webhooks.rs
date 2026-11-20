@@ -16,6 +16,7 @@
 //! {"event": "record.filed", "id": 1234, "at": <ms>, "target": "...", "detail": {...}}
 //! ```
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use rust_web_server::prelude::*;
@@ -60,6 +61,11 @@ const MIGRATIONS: &[Migration] = &[Migration {
         seq BIGINT NOT NULL
     );
     INSERT INTO core_webhook_cursor (id, seq) VALUES (1, 0)",
+},
+Migration {
+    version: 2,
+    name: "webhooks start from the audit log's end",
+    sql: "UPDATE core_webhook_cursor SET seq = (SELECT COALESCE(MAX(seq), 0) FROM core_audit) WHERE id = 1",
 }];
 
 pub const SCHEMA: Schema = Schema {
@@ -100,11 +106,45 @@ fn sign(secret: &str, timestamp: i64, body: &str) -> String {
 
 /// Hands new audit events to the hooks that want them (as deliveries).
 async fn hand_out(instance: &Instance) -> Result<(), String> {
+    // Up to 20 batches of 500 events a run: a backlog drains in minutes.
+    for _ in 0..20 {
+        if !hand_out_batch(instance).await? {
+            break;
+        }
+    }
+    Ok(())
+}
+
+/// One batch, in one transaction: the cursor, the events after it and the
+/// hooks as they are now are read together, and the cursor moves only if
+/// nobody else moved it meanwhile (two workers queue an event once).
+/// True when there may be more.
+async fn hand_out_batch(instance: &Instance) -> Result<bool, String> {
     let s = instance.store.as_ref();
-    let hooks: Vec<(String, Vec<String>, i64)> = s
+    let e = |e: crate::storage::StoreError| e.to_string();
+    let mut tx = s.begin().await.map_err(e)?;
+    let cursor = tx
+        .query("SELECT seq FROM core_webhook_cursor WHERE id = 1", &[])
+        .await
+        .map_err(e)?
+        .first()
+        .and_then(|r| r.int(0))
+        .unwrap_or(0);
+    let rows = tx
+        .query(
+            "SELECT seq, at, action, target, detail FROM core_audit WHERE seq > $1 ORDER BY seq LIMIT 500",
+            &[cursor.into()],
+        )
+        .await
+        .map_err(e)?;
+    let Some(last) = rows.last().and_then(|r| r.int(0)) else {
+        tx.rollback().await.map_err(e)?;
+        return Ok(false);
+    };
+    let hooks: Vec<(String, Vec<String>, i64)> = tx
         .query("SELECT id, events, from_seq FROM core_webhooks", &[])
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(e)?
         .iter()
         .map(|r| {
             (
@@ -114,25 +154,7 @@ async fn hand_out(instance: &Instance) -> Result<(), String> {
             )
         })
         .collect();
-    let cursor = s
-        .query("SELECT seq FROM core_webhook_cursor WHERE id = 1", &[])
-        .await
-        .map_err(|e| e.to_string())?
-        .first()
-        .and_then(|r| r.int(0))
-        .unwrap_or(0);
-    let rows = s
-        .query(
-            "SELECT seq, at, action, target, detail FROM core_audit WHERE seq > $1 ORDER BY seq LIMIT 500",
-            &[cursor.into()],
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-    let Some(last) = rows.last().and_then(|r| r.int(0)) else {
-        return Ok(());
-    };
     let now = now_ms();
-    let mut tx = s.begin().await.map_err(|e| e.to_string())?;
     for r in &rows {
         let seq = r.int(0).unwrap_or(0);
         let Some(event) = r.text(2).and_then(public_name) else {
@@ -150,16 +172,22 @@ async fn hand_out(instance: &Instance) -> Result<(), String> {
                 &[format!("d{}", crate::auth::random_hex(10)).into(), hook.as_str().into(), event.into(), body.as_str().into(), now.into()],
             )
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(e)?;
         }
     }
-    tx.execute(
-        "UPDATE core_webhook_cursor SET seq = $1 WHERE id = 1",
-        &[last.into()],
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    tx.commit().await.map_err(|e| e.to_string())
+    let moved = tx
+        .execute(
+            "UPDATE core_webhook_cursor SET seq = $1 WHERE id = 1 AND seq = $2",
+            &[last.into(), cursor.into()],
+        )
+        .await
+        .map_err(e)?;
+    if moved != 1 {
+        tx.rollback().await.map_err(e)?;
+        return Ok(false);
+    }
+    tx.commit().await.map_err(e)?;
+    Ok(rows.len() == 500)
 }
 
 /// Posts one delivery; the error when the other side did not take it.
@@ -180,7 +208,7 @@ async fn post(
         .header("X-Ortus-Timestamp", timestamp.to_string())
         .header("X-Ortus-Signature", sign(secret, timestamp, body))
         .body(body.to_string())
-        .timeout(std::time::Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(10))
         .send()
         .await
         .map_err(|e| format!("could not reach it: {}", e.without_url()))?;
@@ -197,12 +225,21 @@ async fn deliver(instance: &Instance) -> Result<(), String> {
     let now = now_ms();
     let due = s
         .query(
-            "SELECT d.id, d.event, d.body, d.attempts, h.id, h.url, h.secret FROM core_webhook_deliveries d JOIN core_webhooks h ON h.id = d.hook WHERE d.state = 'queued' AND d.next_at <= $1 ORDER BY d.next_at LIMIT 50",
+            "SELECT d.id, d.event, d.body, d.attempts, h.id, h.url, h.secret FROM core_webhook_deliveries d JOIN core_webhooks h ON h.id = d.hook WHERE d.state = 'queued' AND d.next_at <= $1 ORDER BY d.next_at LIMIT 200",
             &[now.into()],
         )
         .await
         .map_err(|e| e.to_string())?;
+    // At most 10 posts a hook a run: a slow or silent one does not hold
+    // up the others for long.
+    let mut per_hook: BTreeMap<String, usize> = BTreeMap::new();
     for r in &due {
+        let hook_id = r.text(4).unwrap_or_default().to_string();
+        let n = per_hook.entry(hook_id).or_default();
+        if *n >= 10 {
+            continue;
+        }
+        *n += 1;
         let (id, event, body, attempts, hook, url, sealed) = (
             r.text(0).unwrap_or_default(),
             r.text(1).unwrap_or_default(),
@@ -212,7 +249,17 @@ async fn deliver(instance: &Instance) -> Result<(), String> {
             r.text(5).unwrap_or_default(),
             r.text(6).unwrap_or_default(),
         );
-        let secret = instance.keys.open_text(sealed).map_err(|e| e.to_string())?;
+        let Ok(secret) = instance.keys.open_text(sealed) else {
+            // A secret this installation cannot open (a key gone): that
+            // hook fails, the others go on.
+            let _ = s
+                .execute(
+                    "UPDATE core_webhooks SET last_error = $1 WHERE id = $2",
+                    &["its secret cannot be opened".into(), hook.into()],
+                )
+                .await;
+            continue;
+        };
         crate::outbound::note(s, "webhook", url).await;
         let result = post(url, &secret, id, event, body).await;
         let tries = attempts + 1;
@@ -227,7 +274,7 @@ async fn deliver(instance: &Instance) -> Result<(), String> {
                     .await;
             }
             Err(e) => {
-                // 1, 2, 4 … minutes apart; given up after ATTEMPTS.
+                // 2, 4, 8 … minutes apart; given up after ATTEMPTS.
                 let state = if tries >= ATTEMPTS {
                     "failed"
                 } else {

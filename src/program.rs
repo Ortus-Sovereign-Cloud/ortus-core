@@ -1,7 +1,8 @@
 //! Starting and running an Ortus program from its configuration.
 
-/// The largest request body the web port takes (32 MiB).
-pub const MAX_BODY: u64 = 32 * 1024 * 1024;
+/// The largest request body the web port takes (72 MiB: a JMAP upload of
+/// 50 MB, a document's checkpoint).
+pub const MAX_BODY: u64 = 72 * 1024 * 1024;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

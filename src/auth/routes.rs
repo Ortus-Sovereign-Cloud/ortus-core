@@ -121,6 +121,11 @@ async fn password_sign_in(
         &crate::auth::client_address(request, connection, &ortus.config.trusted_proxies),
     );
     check_limits(store, &keys).await?;
+    // Many tries on one account from many networks: each waits longer.
+    let wait = limits::account_delay(store, &input.email).await?;
+    if !wait.is_zero() {
+        tokio::time::sleep(wait).await;
+    }
     let user = usable(store, &input.email).await?;
     let matches = match &user {
         Some(user) => {
@@ -208,6 +213,7 @@ async fn code_sign_in(
         return Err(wrong());
     }
     // The whole sign-in worked: forget the failures of the address too.
+    limits::account_ok(store, &user.email).await?;
     limits::succeeded(
         store,
         &limits::keys(

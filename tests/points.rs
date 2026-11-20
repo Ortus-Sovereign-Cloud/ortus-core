@@ -363,3 +363,72 @@ fn restoring_one_thing_into_a_new_place() {
         );
     }
 }
+
+#[test]
+fn names_and_times_agree() {
+    for t in [
+        0i64,
+        1_795_197_600_000,
+        1_609_459_199_000,
+        4_102_444_800_000,
+    ] {
+        assert_eq!(Some(t), points::time_of(&points::name_at(t)), "{t}");
+    }
+    assert_eq!(None, points::time_of("not-a-point"));
+}
+
+#[test]
+fn networks_group_ipv6_by_64() {
+    use ortus_core::auth::limits::network;
+    assert_eq!("2001:db8:1:2::/64", network("2001:db8:1:2:aaaa::1"));
+    assert_eq!(network("2001:db8:1:2::5"), network("2001:db8:1:2:ffff::9"));
+    assert_eq!("203.0.113.9", network("203.0.113.9"));
+    assert_eq!("203.0.113.9", network("::ffff:203.0.113.9"));
+}
+
+/// One taker or pruner at a time; a changed list of files is refused; a
+/// point still being taken is not pruned away.
+#[test]
+fn taking_and_pruning_take_turns() {
+    let fresh = common::sqlite().unwrap();
+    let store = (fresh.open)();
+    let instance = testing_store::instance(Arc::clone(&store), vec![]);
+    signed_in(&instance, "olena@ministry.example", Role::Owner);
+    block_on(instance.files.put("drive/a.txt", b"shelter list")).unwrap();
+    assert!(block_on(points::claim(&instance)).unwrap());
+    assert!(!block_on(points::claim(&instance)).unwrap(), "held");
+    block_on(points::release(&instance));
+    assert!(block_on(points::claim(&instance)).unwrap());
+    block_on(points::release(&instance));
+
+    let dir = common::temp_dir();
+    let dest = Files::local(&dir.0.join("backups")).unwrap();
+    let now = ortus_core::program::now_ms();
+    let name = block_on(points::take(&instance, &dest, now, true))
+        .unwrap()
+        .name;
+    // A point being taken right now: files written, no manifest yet.
+    let young = points::name_at(now + 1000);
+    block_on(dest.put(&format!("points/{young}/files.jsonl"), b"")).unwrap();
+    block_on(points::prune(&instance, &dest, now + 2000)).unwrap();
+    assert!(
+        block_on(dest.exists(&format!("points/{young}/files.jsonl"))).unwrap(),
+        "kept while young"
+    );
+
+    // The list of files changed in the store: refused when read.
+    let list = format!("points/{name}/files.jsonl");
+    let text = block_on(dest.get(&list)).unwrap().unwrap();
+    let snapshot = block_on(points::Snapshot::open(
+        Files::local(&dir.0.join("backups")).unwrap(),
+        &name,
+    ))
+    .unwrap();
+    block_on(dest.put(&list, &[text.as_slice(), b"\n"].concat())).unwrap();
+    assert!(block_on(snapshot.file("drive/a.txt")).is_err());
+
+    // A new backup store: the index starts again, so every file is read.
+    let other = Files::local(&dir.0.join("elsewhere")).unwrap();
+    block_on(points::take(&instance, &other, now + 60_000, false)).unwrap();
+    assert_eq!(1, block_on(other.list("blobs/")).unwrap().len());
+}
