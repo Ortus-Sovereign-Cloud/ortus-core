@@ -254,6 +254,32 @@ fn apps(
     })
 }
 
+fn admin_sections(
+    _: Request,
+    _: PathParams,
+    _: ConnectionInfo,
+    ortus: Arc<Instance>,
+) -> BoxFuture<'static, Response> {
+    Box::pin(async move {
+        let mut sections = Vec::new();
+        for app in &ortus.apps {
+            let id = app.info().id;
+            if ortus.switches.is_on(id).await.unwrap_or(false) {
+                for s in app.admin_sections() {
+                    sections.push(
+                        json!({"app": id, "path": s.path, "element": s.element, "label": s.label}),
+                    );
+                }
+            }
+        }
+        ok(&json!({ "sections": sections }))
+    })
+}
+
+fn sections_schema() -> Value {
+    json!({"type": "object", "required": ["sections"], "properties": {"sections": {"type": "array", "description": "Sections apps add to the admin console: app, path (under /admin/), element, label (a key of the app's texts)."}}})
+}
+
 fn apps_schema() -> Value {
     json!({
         "type": "object",
@@ -679,6 +705,16 @@ fn core_routes() -> Vec<Route> {
             access: crate::auth::Access::Signed,
             response: apps_schema,
             handler: apps,
+        },
+        Route {
+            method: Method::Get,
+            path: "/admin/sections",
+            id: "listAdminSections",
+            tag: "admin",
+            summary: "The sections installed apps add to the admin console.",
+            access: crate::auth::Access::Admin,
+            response: sections_schema,
+            handler: admin_sections,
         },
     ]
 }

@@ -893,6 +893,57 @@
         ]
       }
     },
+    "/api/v1/admin/sections": {
+      "get": {
+        "description": "For administrators and owners.",
+        "operationId": "listAdminSections",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "sections": {
+                      "description": "Sections apps add to the admin console: app, path (under /admin/), element, label (a key of the app's texts).",
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "sections"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "The sections installed apps add to the admin console.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/sign-in": {
       "get": {
         "description": "For administrators and owners.",

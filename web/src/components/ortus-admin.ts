@@ -1,13 +1,21 @@
 import { LitElement, css, html, nothing } from "lit";
-import { customElement, property } from "lit/decorators.js";
+import { customElement, property, state } from "lit/decorators.js";
 import { LocalizeController } from "@lit-material/core/localize.js";
-import type { Me } from "../api.js";
-import { t } from "../i18n.js";
+import { call, type Me } from "../api.js";
+import { appText, t } from "../i18n.js";
 import type { MessageKey } from "../locales/en.js";
 import "./ortus-admin-overview.js";
 import "./ortus-admin-signin.js";
 import "./ortus-admin-sovereignty.js";
 import "./ortus-admin-users.js";
+
+/** A section an installed app adds (GET /admin/sections). */
+interface AppSection {
+  app: string;
+  path: string;
+  element: string;
+  label: string;
+}
 
 interface Section {
   path: string;
@@ -102,8 +110,36 @@ export class OrtusAdmin extends LitElement {
 
   private readonly localize = new LocalizeController(this);
   @property({ attribute: false }) me: Me | undefined;
+  /** Sections the installed apps add, once their clients have loaded. */
+  @state() private appSections: AppSection[] = [];
+  private readonly elements = new Map<string, HTMLElement>();
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    void this.loadAppSections();
+  }
+
+  private async loadAppSections(): Promise<void> {
+    const { sections } = await call<{ sections: AppSection[] }>("GET", "/admin/sections").catch(() => ({ sections: [] as AppSection[] }));
+    // Each app's client brings its elements and texts.
+    const apps = [...new Set(sections.map((s) => s.app))];
+    await Promise.all(apps.map((app) => import(/* @vite-ignore */ `/assets/apps/${app}/app.js`).catch(() => undefined)));
+    this.appSections = sections.filter((s) => customElements.get(s.element));
+  }
+
+  private appSection(section: AppSection) {
+    let element = this.elements.get(section.path);
+    if (!element) {
+      element = document.createElement(section.element);
+      this.elements.set(section.path, element);
+    }
+    (element as HTMLElement & { me?: Me }).me = this.me;
+    return element;
+  }
 
   private section(path: string) {
+    const fromApp = this.appSections.find((s) => path === s.path || path.startsWith(`${s.path}/`));
+    if (fromApp) return this.appSection(fromApp);
     switch (path) {
       case "/admin/users":
         return html`<ortus-admin-users .me=${this.me}></ortus-admin-users>`;
@@ -129,6 +165,9 @@ export class OrtusAdmin extends LitElement {
         <nav aria-label=${t(this.localize, "admin.title")}>
           ${SECTIONS.map(
             (s) => html`<a href=${s.path} aria-current=${path === s.path ? "page" : nothing}>${t(this.localize, s.label)}</a>`,
+          )}
+          ${this.appSections.map(
+            (s) => html`<a href=${s.path} aria-current=${path === s.path || path.startsWith(`${s.path}/`) ? "page" : nothing}>${appText(this.localize, s.app, s.label)}</a>`,
           )}
         </nav>
         <div class="content">${this.section(path)}</div>

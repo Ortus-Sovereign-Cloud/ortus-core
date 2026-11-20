@@ -58,6 +58,17 @@ pub struct AppInfo {
     pub order: u32,
 }
 
+/// A section an app adds to the admin console, such as mail's Domains.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AdminSection {
+    /// Under `/admin/`, as `/admin/domains`.
+    pub path: &'static str,
+    /// The element the app's client defines for it, `ortus-<id>-...`.
+    pub element: &'static str,
+    /// The key of its name in the app's texts.
+    pub label: &'static str,
+}
+
 /// Work an app does for one role, such as accepting SMTP connections for
 /// the mail role. It runs until `stop` resolves.
 pub struct RoleTask {
@@ -94,6 +105,11 @@ pub trait App: Send + Sync + 'static {
 
     /// The kinds of background job the app runs.
     fn jobs(&self, _instance: &Arc<Instance>) -> Vec<JobKind> {
+        Vec::new()
+    }
+
+    /// Sections the app adds to the admin console.
+    fn admin_sections(&self) -> Vec<AdminSection> {
         Vec::new()
     }
 
@@ -172,6 +188,30 @@ pub fn check(apps: &[Arc<dyn App>]) -> Result<(), String> {
         seen.push(info.id);
         if info.path != format!("/{}", info.id) {
             return Err(format!("app '{}' must live at /{}", info.id, info.id));
+        }
+        let core_sections = [
+            "/admin",
+            "/admin/users",
+            "/admin/sign-in",
+            "/admin/sovereignty",
+        ];
+        for section in app.admin_sections() {
+            let name = section.path.strip_prefix("/admin/").unwrap_or_default();
+            if name.is_empty()
+                || !name.bytes().all(|b| b.is_ascii_lowercase() || b == b'-')
+                || core_sections.contains(&section.path)
+            {
+                return Err(format!(
+                    "app '{}' has the admin section {}, not a free /admin/<name>",
+                    info.id, section.path
+                ));
+            }
+            if !section.element.starts_with(&format!("ortus-{}-", info.id)) {
+                return Err(format!(
+                    "app '{}' names the element {}, not ortus-{}-...",
+                    info.id, section.element, info.id
+                ));
+            }
         }
         for route in app.routes() {
             let own = route.path == format!("/{}", info.id)

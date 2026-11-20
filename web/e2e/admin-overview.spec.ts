@@ -50,3 +50,23 @@ test("screenshot of the overview for comparing with the board", async ({ page })
   await expect(page.getByRole("heading", { name: en["overview.installation"] })).toBeVisible();
   await page.screenshot({ path: "test-results/admin-overview.png" });
 });
+
+// A section an app adds (mail's Domains, for one) shows in the console,
+// named in the app's texts, and opens the app's element.
+const BOARDS_APP = `
+import { LitElement, html, registerAppMessages } from "/assets/kit.js";
+await registerAppMessages("boards", { admin: "Boards" }, async (code) => (code === "pl" ? { admin: "Tablice" } : {}));
+class BoardsAdmin extends LitElement { render() { return html\`<h1>Boards admin</h1>\`; } }
+customElements.define("ortus-boards-admin", BoardsAdmin);
+`;
+
+test("an app's admin section shows in the console and opens", async ({ page }) => {
+  await page.route("**/api/v1/admin/sections", (route) => route.fulfill({ json: { sections: [{ app: "boards", path: "/admin/boards", element: "ortus-boards-admin", label: "admin" }] } }));
+  await page.route("**/assets/apps/boards/app.js", (route) => route.fulfill({ body: BOARDS_APP, contentType: "text/javascript" }));
+  await page.goto("/admin");
+  const link = page.getByRole("navigation", { name: en["admin.title"] }).getByRole("link", { name: "Boards" });
+  await link.click();
+  await expect(page).toHaveURL(/\/admin\/boards$/);
+  await expect(page.getByRole("heading", { name: "Boards admin" })).toBeVisible();
+  await expect(link).toHaveAttribute("aria-current", "page");
+});
