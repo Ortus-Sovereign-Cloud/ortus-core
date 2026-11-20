@@ -325,6 +325,12 @@ export class OrtusSearch extends LitElement {
 
   private go(path: string): void {
     this.dialog.close();
+    const app = (p: string) => p.split(/[/?#]/)[1] ?? "";
+    // Within the open app it moves itself; another app is a new page.
+    if (app(path) !== app(location.pathname)) {
+      location.assign(path);
+      return;
+    }
     history.pushState(null, "", path);
     window.dispatchEvent(new PopStateEvent("popstate"));
   }
