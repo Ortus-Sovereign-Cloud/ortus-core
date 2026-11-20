@@ -7,6 +7,13 @@ import type { MessageKey } from "../locales/en.js";
 import { TEXT_SIZES, loadPreferences, savePreferences, type Preferences } from "../preferences.js";
 import { controls } from "../ui.js";
 
+interface AppPassword {
+  id: string;
+  name: string;
+  created_at: number;
+  last_used_at: number | null;
+}
+
 interface Device {
   id: string;
   current: boolean;
@@ -64,7 +71,7 @@ export class OrtusSettings extends LitElement {
       }
       .grid {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 16px;
         max-inline-size: 1200px;
         padding: 32px 24px;
@@ -142,6 +149,25 @@ export class OrtusSettings extends LitElement {
       .field {
         margin-block-end: 8px;
       }
+      .fresh {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-block: 12px;
+        padding: 12px 16px;
+        border-radius: 12px;
+        border: 1px solid rgba(79, 209, 197, 0.5);
+        background: rgba(79, 209, 197, 0.08);
+      }
+      .fresh code {
+        font-family: "Geist Mono Variable", ui-monospace, monospace;
+        font-size: 18px;
+        letter-spacing: 0.04em;
+        user-select: all;
+      }
+      form.inline {
+        margin-block-start: 12px;
+      }
       .email {
         margin: 8px 0 16px;
         color: var(--ortus-text-2);
@@ -176,6 +202,9 @@ export class OrtusSettings extends LitElement {
   @state() private preferences: Preferences | undefined;
   @state() private devices: Device[] = [];
   @state() private saved: MessageKey | undefined;
+  @state() private appPasswords: AppPassword[] = [];
+  /** The password just made, shown this once. */
+  @state() private fresh: { name: string; password: string } | undefined;
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -185,6 +214,20 @@ export class OrtusSettings extends LitElement {
   private async load(): Promise<void> {
     this.preferences = await loadPreferences();
     this.devices = (await call<{ sessions: Device[] }>("GET", "/me/sessions")).sessions;
+    this.appPasswords = (await call<{ app_passwords: AppPassword[] }>("GET", "/me/app-passwords")).app_passwords;
+  }
+
+  private async makeAppPassword(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    const form = event.target as HTMLFormElement;
+    const name = String(new FormData(form).get("app") ?? "").trim();
+    this.fresh = await call<{ name: string; password: string }>("POST", "/me/app-passwords", { name });
+    form.reset();
+    await this.load();
+  }
+
+  private async removeAppPassword(id: string): Promise<void> {
+    this.appPasswords = (await call<{ app_passwords: AppPassword[] }>("DELETE", `/me/app-passwords/${id}`)).app_passwords;
   }
 
   private async change(change: Partial<Preferences>): Promise<void> {
@@ -270,6 +313,31 @@ export class OrtusSettings extends LitElement {
             </select>
           </div>
           ${this.saved ? html`<p class="status" role="status">${t(this.localize, this.saved)}</p>` : nothing}
+        </section>
+        <section class="card" aria-labelledby="apps">
+          <h2 id="apps">${t(this.localize, "settings.appPasswords")}</h2>
+          <p class="note">${t(this.localize, "settings.appPasswordsLead")}</p>
+          ${this.fresh
+            ? html`<div class="fresh" role="status">
+                <span>${t(this.localize, "settings.appPasswordMade", { name: this.fresh.name })}</span>
+                <code>${this.fresh.password}</code>
+                <span class="note">${t(this.localize, "settings.appPasswordOnce")}</span>
+              </div>`
+            : nothing}
+          ${this.appPasswords.map(
+            (a) => html`<div class="device">
+              <div>
+                ${a.name}
+                <small>${a.last_used_at ? t(this.localize, "settings.lastUsed", { time: this.ago(a.last_used_at) }) : t(this.localize, "settings.neverUsed")}</small>
+              </div>
+              <button class="link" aria-label=${t(this.localize, "settings.removeAppPassword", { name: a.name })} @click=${() => this.removeAppPassword(a.id)}>${t(this.localize, "settings.remove")}</button>
+            </div>`,
+          )}
+          <form class="inline" @submit=${this.makeAppPassword}>
+            <label for="app">${t(this.localize, "settings.appName")}</label>
+            <input id="app" name="app" required maxlength="100" placeholder=${t(this.localize, "settings.appNameHint")} />
+            <button class="button">${t(this.localize, "settings.makeAppPassword")}</button>
+          </form>
         </section>
         <section class="card" aria-labelledby="profile">
           <h2 id="profile">${t(this.localize, "settings.profile")}</h2>

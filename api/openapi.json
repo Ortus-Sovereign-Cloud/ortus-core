@@ -1787,6 +1787,130 @@
         ]
       }
     },
+    "/api/v1/me/app-passwords": {
+      "get": {
+        "description": "For anyone signed in.",
+        "operationId": "listAppPasswords",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "One's app passwords (names and dates, never the passwords).",
+        "tags": [
+          "me"
+        ]
+      },
+      "post": {
+        "description": "For anyone signed in.",
+        "operationId": "createAppPassword",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Make an app password for one app: {name}. The answer shows the password, this once.",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/app-passwords/:id": {
+      "delete": {
+        "description": "For anyone signed in.",
+        "operationId": "removeAppPassword",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Remove an app password; the app it was for can no longer sign in.",
+        "tags": [
+          "me"
+        ]
+      }
+    },
     "/api/v1/me/passkeys": {
       "post": {
         "description": "For anyone signed in.",

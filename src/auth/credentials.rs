@@ -22,6 +22,8 @@ pub enum Kind {
     Totp,
     Recovery,
     Passkey,
+    /// A generated password for one mail, calendar or contacts app.
+    AppPassword,
 }
 
 impl Kind {
@@ -32,6 +34,7 @@ impl Kind {
             Kind::Totp => "totp",
             Kind::Recovery => "recovery",
             Kind::Passkey => "passkey",
+            Kind::AppPassword => "app-password",
         }
     }
 }

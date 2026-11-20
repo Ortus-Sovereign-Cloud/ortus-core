@@ -8,6 +8,7 @@
 
 pub mod accounts;
 pub mod admin_users;
+pub mod app_passwords;
 pub mod cbor;
 pub mod credentials;
 pub mod directory;
