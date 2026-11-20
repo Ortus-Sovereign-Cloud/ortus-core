@@ -8,8 +8,9 @@
 //! example `drive/ab/cdef`. A key names one file; there are no directories
 //! to create or remove.
 //!
-//! Files are read and written whole. Streaming of large files is not part
-//! of this interface yet.
+//! Small files are read and written whole ([`Files::put`], [`Files::get`]);
+//! large ones in parts: [`Files::writer`] writes chunk after chunk (S3
+//! multipart under the hood) and [`Files::read_range`] reads a part.
 //!
 //! The interface is async. Code that is not async uses [`blocking::Files`].
 
@@ -76,7 +77,11 @@ pub struct Files {
 impl Files {
     /// A store in the local directory `root`, created when missing.
     pub fn local(root: &Path) -> FilesResult<Self> {
-        let builder = services::Fs::default().root(&root.to_string_lossy());
+        // Files being written wait beside the store, not in it, until whole.
+        let writing = format!("{}.writing", root.to_string_lossy().trim_end_matches('/'));
+        let builder = services::Fs::default()
+            .root(&root.to_string_lossy())
+            .atomic_write_dir(&writing);
         Ok(Self {
             operator: Operator::new(builder).map_err(error)?,
         })
@@ -133,6 +138,59 @@ impl Files {
         on_io(async move { operator.delete(&key).await }).await
     }
 
+    /// The size in bytes of the file under `key`, or `None` when missing.
+    pub async fn size(&self, key: &str) -> FilesResult<Option<u64>> {
+        let (operator, key) = (self.operator.clone(), check(key)?.to_string());
+        on_io(async move {
+            match operator.stat(&key).await {
+                Ok(meta) => Ok(Some(meta.content_length())),
+                Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
+                Err(e) => Err(e),
+            }
+        })
+        .await
+    }
+
+    /// `length` bytes from `start` of the file under `key` (fewer at its
+    /// end), or `None` when there is no such file.
+    pub async fn read_range(
+        &self,
+        key: &str,
+        start: u64,
+        length: u64,
+    ) -> FilesResult<Option<Vec<u8>>> {
+        let (operator, key) = (self.operator.clone(), check(key)?.to_string());
+        on_io(async move {
+            let size = match operator.stat(&key).await {
+                Ok(meta) => meta.content_length(),
+                Err(e) if e.kind() == ErrorKind::NotFound => return Ok(None),
+                Err(e) => return Err(e),
+            };
+            let end = start.saturating_add(length).min(size);
+            if start >= end {
+                return Ok(Some(Vec::new()));
+            }
+            operator
+                .read_with(&key)
+                .range(start..end)
+                .await
+                .map(|b| Some(b.to_vec()))
+        })
+        .await
+    }
+
+    /// A writer for a new file under `key`: write its parts in order, then
+    /// [`FileWriter::close`]. Until then the file is not there (or the old
+    /// one still is); [`FileWriter::abort`] gives up.
+    pub async fn writer(&self, key: &str) -> FilesResult<FileWriter> {
+        let (operator, key) = (self.operator.clone(), check(key)?.to_string());
+        let writer =
+            on_io(async move { operator.writer_with(&key).chunk(WRITE_CHUNK).await }).await?;
+        Ok(FileWriter {
+            inner: std::sync::Arc::new(tokio::sync::Mutex::new(Some(writer))),
+        })
+    }
+
     /// The keys of every file under `prefix` (a key prefix ending in `/`,
     /// or empty for all files), sorted.
     pub async fn list(&self, prefix: &str) -> FilesResult<Vec<String>> {
@@ -163,6 +221,55 @@ impl Files {
             .collect();
         keys.sort();
         Ok(keys)
+    }
+}
+
+/// Parts sent to the store at a time (S3 needs at least 5 MiB but the last).
+const WRITE_CHUNK: usize = 8 * 1024 * 1024;
+
+/// A file being written in parts ([`Files::writer`]).
+pub struct FileWriter {
+    inner: std::sync::Arc<tokio::sync::Mutex<Option<opendal::Writer>>>,
+}
+
+impl FileWriter {
+    /// Writes the next part.
+    pub async fn write(&mut self, part: &[u8]) -> FilesResult<()> {
+        let (inner, part) = (self.inner.clone(), part.to_vec());
+        on_io(async move {
+            match inner.lock().await.as_mut() {
+                Some(w) => w.write(part).await,
+                None => Err(opendal::Error::new(
+                    ErrorKind::Unexpected,
+                    "the writer is closed",
+                )),
+            }
+        })
+        .await
+    }
+
+    /// Finishes the file: it is there, whole, from now on.
+    pub async fn close(self) -> FilesResult<()> {
+        let inner = self.inner.clone();
+        on_io(async move {
+            match inner.lock().await.take() {
+                Some(mut w) => w.close().await.map(|_| ()),
+                None => Ok(()),
+            }
+        })
+        .await
+    }
+
+    /// Gives up: nothing is left behind.
+    pub async fn abort(self) -> FilesResult<()> {
+        let inner = self.inner.clone();
+        on_io(async move {
+            match inner.lock().await.take() {
+                Some(mut w) => w.abort().await,
+                None => Ok(()),
+            }
+        })
+        .await
     }
 }
 

@@ -81,8 +81,64 @@ on_both_stores!(
     put_replaces,
     list_returns_files_under_a_prefix,
     bad_keys_are_refused,
-    stores_do_not_see_each_other
+    stores_do_not_see_each_other,
+    large_files_in_parts
 );
+
+fn large_files_in_parts(files: &Files) {
+    use ortus_core::runtime::block_on;
+    let store = files.as_async();
+    // 20 MiB in 7 MiB parts: more than one S3 multipart part.
+    let part = |n: u8| -> Vec<u8> {
+        (0..7 * 1024 * 1024)
+            .map(|i: usize| (i % 251) as u8 ^ n)
+            .collect()
+    };
+    let mut writer = block_on(store.writer("drive/big")).unwrap();
+    for n in 0..3u8 {
+        let mut p = part(n);
+        if n == 2 {
+            p.truncate(6 * 1024 * 1024);
+        }
+        block_on(writer.write(&p)).unwrap();
+    }
+    assert!(
+        !files.exists("drive/big").unwrap(),
+        "not there before it is closed"
+    );
+    block_on(writer.close()).unwrap();
+    let total = 20 * 1024 * 1024u64;
+    assert_eq!(Some(total), block_on(store.size("drive/big")).unwrap());
+    // A range across the first two parts, and one past the end.
+    let start = 7 * 1024 * 1024 - 10;
+    let got = block_on(store.read_range("drive/big", start, 20))
+        .unwrap()
+        .unwrap();
+    let mut want = part(0)[start as usize..].to_vec();
+    want.extend_from_slice(&part(1)[..10]);
+    assert_eq!(want, got);
+    assert_eq!(
+        5,
+        block_on(store.read_range("drive/big", total - 5, 100))
+            .unwrap()
+            .unwrap()
+            .len()
+    );
+    assert_eq!(
+        Some(Vec::new()),
+        block_on(store.read_range("drive/big", total + 1, 10)).unwrap()
+    );
+    assert_eq!(
+        None,
+        block_on(store.read_range("drive/none", 0, 10)).unwrap()
+    );
+    assert_eq!(None, block_on(store.size("drive/none")).unwrap());
+    // Given up: nothing is left.
+    let mut gone = block_on(store.writer("drive/gone")).unwrap();
+    block_on(gone.write(&part(9))).unwrap();
+    block_on(gone.abort()).unwrap();
+    assert!(!files.exists("drive/gone").unwrap());
+}
 
 fn contents_round_trip(files: &Files) {
     let binary: Vec<u8> = (0..=255u8).cycle().take(300_000).collect();
