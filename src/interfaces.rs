@@ -215,3 +215,65 @@ pub trait Tasks: Send + Sync {
         from: Option<ItemRef>,
     ) -> BoxFuture<'a, Result<ItemRef, String>>;
 }
+
+/// One signature found in a PDF, checked.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct SignatureCheck {
+    /// The signer's name in their certificate, and their address.
+    pub signer: String,
+    pub email: Option<String>,
+    /// When it says it was signed (Unix ms).
+    pub at: Option<i64>,
+    pub reason: String,
+    /// The bytes it covers are unchanged, and the signature is the key's.
+    pub intact: bool,
+    /// The certificate was issued by this organisation's authority.
+    pub trusted: bool,
+    /// The certificate has been revoked since (when).
+    pub revoked_at: Option<i64>,
+    /// Nothing was added to the file after it.
+    pub whole: bool,
+}
+
+/// Provided by the approvals app; used by docs to sign a document's PDF
+/// in an approval route, and by records to check signatures.
+pub trait Signing: Send + Sync {
+    /// Signs the PDF as `user` with their personal certificate (made the
+    /// first time), saying why ("Director signs"). Answers the PDF with
+    /// the signature added (an incremental update).
+    fn sign<'a>(
+        &'a self,
+        user: &'a str,
+        pdf: &'a [u8],
+        reason: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<u8>, String>>;
+
+    /// Every signature in a PDF, checked against the organisation's
+    /// authority.
+    fn verify<'a>(&'a self, pdf: &'a [u8]) -> BoxFuture<'a, Result<Vec<SignatureCheck>, String>>;
+}
+
+/// A record to file: a final PDF that is never changed or deleted while
+/// it is kept.
+pub struct NewRecord<'a> {
+    /// Who files it (the account the route belongs to).
+    pub by: &'a str,
+    pub title: &'a str,
+    /// What it is ("decision", "contract", ...).
+    pub kind: &'a str,
+    /// The case it belongs to, by its reference ("2026/EM/0114"); made
+    /// when it does not exist yet. None: the year's general case.
+    pub case: Option<&'a str>,
+    pub label: Option<&'a str>,
+    pub pdf: &'a [u8],
+    /// Where it came from (`/docs?doc=...`).
+    pub source: &'a str,
+    /// Who may open it besides records officers (the route's people).
+    pub readers: &'a [String],
+}
+
+/// Provided by the records app; used by docs (and later by others) to
+/// file what an approval route produced.
+pub trait Records: Send + Sync {
+    fn file<'a>(&'a self, record: NewRecord<'a>) -> BoxFuture<'a, Result<ItemRef, String>>;
+}
