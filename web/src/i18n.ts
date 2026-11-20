@@ -61,12 +61,39 @@ export function savedLocale(): string | null {
   }
 }
 
+/** An app's catalogs: its texts in one language, loaded when needed. */
+export type AppCatalogs = (code: string) => Promise<Record<string, Message>>;
+
+const appCatalogs = new Map<string, AppCatalogs>();
+const appEnglish = new Map<string, Record<string, Message>>();
+
+/**
+ * Adds an app's texts to every language (`english` is used until a
+ * catalog loads, and for keys a catalog lacks). Its keys live under
+ * `app:<id>.`; read them with [`appText`].
+ */
+export async function registerAppMessages(appId: string, english: Record<string, Message>, catalogs: AppCatalogs): Promise<void> {
+  appCatalogs.set(appId, catalogs);
+  appEnglish.set(appId, english);
+  const current = document.documentElement.lang || DEFAULT_LOCALE;
+  await setLocale(current, false);
+}
+
+/** An app's text for `key` in the component's language. */
+export function appText(localize: LocalizeController, appId: string, key: string, args?: MessageArgs): string {
+  return localize.term(`app:${appId}.${key}`, (appEnglish.get(appId)?.[key] ?? key) as Message, args);
+}
+
 /** Switches the page to `code`: loads its catalogs, then sets `lang` and `dir`. */
 export async function setLocale(code: string, remember = true): Promise<string> {
   const locale = findLocale(code) ?? findLocale(DEFAULT_LOCALE)!;
   const [messages, components] = await locale.load();
   const catalog: Translation = { $code: locale.code, $name: locale.name, $dir: locale.dir };
   for (const [key, message] of Object.entries(messages)) catalog[PREFIX + key] = message;
+  for (const [appId, load] of appCatalogs) {
+    const texts = await load(locale.code).catch(() => ({}) as Record<string, Message>);
+    for (const [key, message] of Object.entries(texts)) catalog[`app:${appId}.${key}`] = message;
+  }
   registerTranslation(...(components ? [components, catalog] : [catalog]));
   document.documentElement.lang = locale.code;
   document.documentElement.dir = locale.dir;

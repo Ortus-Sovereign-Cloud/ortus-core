@@ -235,6 +235,8 @@ export class OrtusShell extends LitElement {
   private readonly localize = new LocalizeController(this);
 
   @property({ attribute: false }) me: Me | undefined;
+  private readonly appElements = new Map<string, HTMLElement>();
+  private readonly appsTried = new Set<string>();
   @state() private apps: InstalledApp[] | undefined;
   @state() private failed = false;
   @state() private languageOpen = false;
@@ -344,7 +346,21 @@ export class OrtusShell extends LitElement {
     const app = this.current();
     const element = app ? `ortus-${app.id}-app` : "";
     if (app && customElements.get(element)) {
-      return document.createElement(element);
+      // One element per app, kept, so the app keeps its state across renders.
+      let shown = this.appElements.get(app.id);
+      if (!shown) {
+        shown = document.createElement(element);
+        this.appElements.set(app.id, shown);
+      }
+      return shown;
+    }
+    if (app && !this.appsTried.has(app.id)) {
+      // The app's client comes from the app itself, the first time its path opens.
+      this.appsTried.add(app.id);
+      import(/* @vite-ignore */ `/assets/apps/${app.id}/app.js`)
+        .catch(() => undefined)
+        .finally(() => this.requestUpdate());
+      return html`<p class="loading" role="status" aria-busy="true"></p>`;
     }
     return html`
       <section class="missing" role="status">

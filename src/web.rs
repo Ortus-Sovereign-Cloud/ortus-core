@@ -63,6 +63,11 @@ fn header(name: &str, value: &str) -> Header {
 
 fn file(path: &str, cache: &str) -> Option<Response> {
     let embedded = Client::get(path)?;
+    Some(respond(path, embedded.data.into_owned(), cache))
+}
+
+/// A file's response, with the headers every Ortus file carries.
+fn respond(path: &str, data: Vec<u8>, cache: &str) -> Response {
     let headers = vec![
         header("Cache-Control", cache),
         header("X-Content-Type-Options", "nosniff"),
@@ -70,12 +75,22 @@ fn file(path: &str, cache: &str) -> Option<Response> {
         header("Referrer-Policy", "no-referrer"),
         header("Cross-Origin-Opener-Policy", "same-origin"),
     ];
-    let body = Range::get_content_range(embedded.data.into_owned(), mime(path).to_string());
-    Some(Response::get_response(
+    let body = Range::get_content_range(data, mime(path).to_string());
+    Response::get_response(
         STATUS_CODE_REASON_PHRASE.n200_ok,
         Some(headers),
         Some(vec![body]),
-    ))
+    )
+}
+
+/// Files with a fixed name (the kit, an app's entry) change with each
+/// release, so browsers ask again; hashed names are kept for a year.
+fn cache_for(path: &str) -> &'static str {
+    if path == "kit.js" || path == "app.js" || path.ends_with("/kit.js") {
+        "no-cache"
+    } else {
+        "public, max-age=31536000, immutable"
+    }
 }
 
 fn not_found() -> Response {
@@ -110,14 +125,22 @@ pub fn register(
     for screen in &screens {
         app = app.get(screen, |_, _, _, _| page());
     }
-    app.get("/assets/*path", |_, params: PathParams, _, _| async move {
+    app.get(
+        "/assets/apps/:id/*path",
+        |_, params: PathParams, _, instance: Arc<Arc<Instance>>| async move {
+            // An app's own built client, from the app itself.
+            let id = params.get("id").unwrap_or_default();
+            let path = params.get("path").unwrap_or_default();
+            match instance.app(id).and_then(|app| app.web_file(path)) {
+                Some(data) => respond(path, data.into_owned(), cache_for(path)),
+                None => not_found(),
+            }
+        },
+    )
+    .get("/assets/*path", |_, params: PathParams, _, _| async move {
         let path = params.get("path").unwrap_or_default().to_string();
         // Embedded names only: a path with `..` simply has no such file.
-        file(
-            &format!("assets/{path}"),
-            "public, max-age=31536000, immutable",
-        )
-        .unwrap_or_else(not_found)
+        file(&format!("assets/{path}"), cache_for(&path)).unwrap_or_else(not_found)
     })
     .get("/favicon.svg", |_, _, _, _| async {
         file("favicon.svg", "public, max-age=86400").unwrap_or_else(not_found)

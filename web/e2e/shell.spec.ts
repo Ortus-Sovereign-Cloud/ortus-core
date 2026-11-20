@@ -232,3 +232,43 @@ test.describe("an address that belongs to no installed app", () => {
     });
   }
 });
+
+// An app's client: the shell imports /assets/apps/<id>/app.js when the
+// app's path opens; the app builds on the kit (/assets/kit.js) and its
+// texts follow the page's language.
+const TASKS_APP = `
+import { LitElement, html, LocalizeController, appText, registerAppMessages, controls } from "/assets/kit.js";
+const texts = { en: { title: "My tasks" }, pl: { title: "Moje zadania" }, uk: { title: "Мої завдання" }, de: { title: "Meine Aufgaben" }, fr: { title: "Mes tâches" }, ar: { title: "مهامي" } };
+await registerAppMessages("tasks", texts.en, async (code) => texts[code] ?? {});
+class TasksApp extends LitElement {
+  static styles = [controls];
+  localize = new LocalizeController(this);
+  count = 0;
+  render() { return html\`<h1>\${appText(this.localize, "tasks", "title")}</h1><button class="button" @click=\${() => { this.count += 1; this.requestUpdate(); }}>\${this.count}</button>\`; }
+}
+customElements.define("ortus-tasks-app", TasksApp);
+`;
+
+test("an app's own client loads at its path, shares the kit and follows the language", async ({ page }) => {
+  const errors = watchForErrors(page);
+  await withApps(page);
+  await page.route("**/assets/apps/tasks/app.js", (route) => route.fulfill({ body: TASKS_APP, contentType: "text/javascript" }));
+  // The stand-in app is not installed on the test server, so its place is not kept.
+  await page.route("**/api/v1/me/place", (route) => route.fulfill({ json: {} }));
+  await page.goto("/tasks");
+  await expect(page.getByRole("heading", { level: 1, name: "My tasks" })).toBeVisible();
+  // The element is kept: its state survives the shell rendering again.
+  await page.locator("ortus-tasks-app").getByRole("button").click();
+  await chooseLanguage(page, "pl");
+  await expect(page.getByRole("heading", { level: 1, name: "Moje zadania" })).toBeVisible();
+  await expect(page.locator("ortus-tasks-app").getByRole("button")).toHaveText("1");
+  await chooseLanguage(page, "ar");
+  await expect(page.getByRole("heading", { level: 1, name: "مهامي" })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("an app without a client of its own says it is not installed", async ({ page }) => {
+  await withApps(page);
+  await page.goto("/calls");
+  await expect(page.getByRole("heading", { name: en["notInstalled.title"] })).toBeVisible();
+});

@@ -105,6 +105,13 @@ pub trait App: Send + Sync + 'static {
     /// Offers services to other apps, once at start.
     fn provide(&self, _instance: &Arc<Instance>, _services: &Services) {}
 
+    /// A file of the app's built web client, by its path under the app's
+    /// assets (`app.js` defines the `ortus-<id>-app` element the shell
+    /// shows at the app's path). Usually from a `rust_embed` folder.
+    fn web_file(&self, _path: &str) -> Option<std::borrow::Cow<'static, [u8]>> {
+        None
+    }
+
     /// The daily retention sweep: removes what is past its period and on
     /// no hold (`rules.may_purge`), through `tx` only (files go by queuing
     /// jobs in `tx`), and answers how many things went.
