@@ -135,12 +135,16 @@ pub struct Suggestion {
 
 /// Provided by the drive app; used by mail and chat to keep attachments.
 pub trait Drive: Send + Sync {
-    /// Saves a file into the person's drive.
+    /// Saves a file into the person's drive. `source` says which app it
+    /// came from ("mail"), `note` how ("Attached by Anna Kowalska").
     fn save<'a>(
         &'a self,
         user: &'a str,
         name: &'a str,
+        mime: &'a str,
         contents: &'a [u8],
+        source: &'a str,
+        note: Option<&'a str>,
     ) -> BoxFuture<'a, Result<ItemRef, String>>;
 }
 
