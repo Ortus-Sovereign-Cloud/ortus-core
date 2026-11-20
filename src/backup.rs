@@ -161,6 +161,8 @@ async fn tables(tx: &mut dyn AsyncTx, engine: Engine) -> Result<Vec<String>, Bac
         .await?
         .iter()
         .filter_map(|row| row.text(0).map(str::to_string))
+        // The search index's full-text tables are made again from its rows.
+        .filter(|name| !name.starts_with("core_search_fts"))
         .collect())
 }
 
@@ -563,6 +565,7 @@ pub async fn restore(
         }
     }
     tx.commit().await?;
+    crate::search::rebuild(store).await?;
 
     for entry in &checked.files {
         let path = checked.dir.join("files").join(&entry.key);

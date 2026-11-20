@@ -179,6 +179,27 @@ pub trait App: Send + Sync + 'static {
     /// It works through `tx`, the deletion's own transaction, and must not
     /// use the store otherwise; files go by queuing jobs in `tx`. What sits
     /// in a channel on legal hold (`rules.held_channels`) stays.
+    /// Other accounts whose indexed items `user` may see some of (people
+    /// who share with them). Their hits pass [`App::search_allowed`].
+    fn search_owners<'a>(
+        &'a self,
+        _instance: &'a Instance,
+        _user: &'a str,
+    ) -> BoxFuture<'a, Vec<String>> {
+        Box::pin(async { Vec::new() })
+    }
+
+    /// Of these ids of the app's indexed items that are not `user`'s own,
+    /// the ones they may see. None, unless the app says so.
+    fn search_allowed<'a>(
+        &'a self,
+        _instance: &'a Instance,
+        _user: &'a str,
+        _ids: Vec<String>,
+    ) -> BoxFuture<'a, Vec<String>> {
+        Box::pin(async { Vec::new() })
+    }
+
     fn forget_user<'a>(
         &'a self,
         _tx: &'a mut dyn AsyncTx,

@@ -620,6 +620,7 @@ pub fn routes() -> Vec<Route> {
     all.extend(crate::auth::app_passwords::routes());
     all.extend(crate::policy::routes());
     all.extend(crate::retention::routes());
+    all.extend(crate::search::routes());
     all.extend(crate::sovereignty::routes());
     all
 }

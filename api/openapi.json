@@ -2671,6 +2671,48 @@
         ]
       }
     },
+    "/api/v1/search": {
+      "get": {
+        "description": "For anyone signed in.",
+        "operationId": "search",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Search one's mail, files, events and people: ?q= (words, from:name, has:attachment, in:app), ?app=, ?limit=.",
+        "tags": [
+          "search"
+        ]
+      }
+    },
     "/api/v1/session": {
       "get": {
         "operationId": "getSession",

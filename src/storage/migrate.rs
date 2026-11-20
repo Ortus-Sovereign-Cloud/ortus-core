@@ -81,6 +81,11 @@ pub async fn migrate(
     let mut applied = 0;
     for migration in &migrations[done.len()..] {
         for statement in statements(migration.sql) {
+            // `{{sqlite}}` and `{{postgres}}` mark a statement for one engine.
+            let (only, statement) = engine_only(statement);
+            if only.is_some_and(|e| e != store.engine()) {
+                continue;
+            }
             tx.execute(statement, &[]).await?;
         }
         tx.execute(
@@ -130,6 +135,18 @@ async fn history(tx: &mut dyn AsyncTx, app: &str) -> StoreResult<Vec<(i64, Strin
         done.push((version, row.text(1).unwrap_or_default().to_string()));
     }
     Ok(done)
+}
+
+/// A statement's engine tag, if any, and the statement without it.
+fn engine_only(statement: &str) -> (Option<Engine>, &str) {
+    let t = statement.trim_start();
+    if let Some(rest) = t.strip_prefix("{{sqlite}}") {
+        (Some(Engine::Sqlite), rest)
+    } else if let Some(rest) = t.strip_prefix("{{postgres}}") {
+        (Some(Engine::Postgres), rest)
+    } else {
+        (None, statement)
+    }
 }
 
 /// Splits migration SQL into statements at each `;` outside a literal.

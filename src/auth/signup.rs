@@ -383,6 +383,9 @@ async fn expire(tx: &mut dyn AsyncTx, ortus: &Instance, now: i64) -> Result<(), 
         for app in &ortus.apps {
             app.forget_user(tx, &id, &rules).await?;
         }
+        crate::search::forget_in(tx, ortus.store.engine(), &id)
+            .await
+            .map_err(|e| e.to_string())?;
         for sql in [
             "DELETE FROM core_sessions WHERE user_id = $1",
             "DELETE FROM core_credentials WHERE user_id = $1",

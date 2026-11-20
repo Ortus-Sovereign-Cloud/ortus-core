@@ -26,6 +26,7 @@ pub mod policy;
 pub mod program;
 pub mod retention;
 pub mod runtime;
+pub mod search;
 pub mod secrets;
 pub mod services;
 pub mod sovereignty;
@@ -62,6 +63,7 @@ pub fn schemas() -> Vec<storage::Schema> {
         oidc::SCHEMA,
         auth::external::SCHEMA,
         auth::saml::SCHEMA,
+        search::SCHEMA,
     ]
 }
 
