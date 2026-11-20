@@ -10,10 +10,12 @@ pub mod accounts;
 pub mod cbor;
 pub mod credentials;
 pub mod limits;
+pub mod mail_text;
 pub mod passkeys;
 pub mod routes;
 pub mod sessions;
 pub mod setup;
+pub mod signup;
 pub mod webauthn;
 
 use std::sync::Arc;

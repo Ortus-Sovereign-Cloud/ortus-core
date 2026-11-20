@@ -2,7 +2,7 @@ import { LitElement, css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { LocalizeController } from "@lit-material/core/localize.js";
-import { ApiError, homeFor, signInWithCode, signInWithPassword, signInWithRecoveryCode, type Me } from "../api.js";
+import { ApiError, homeFor, site, signInWithCode, signInWithPassword, signInWithRecoveryCode, type Me } from "../api.js";
 import { t } from "../i18n.js";
 import type { MessageKey } from "../locales/en.js";
 import { passkeysAvailable, signInWithPasskey } from "../passkeys.js";
@@ -40,6 +40,7 @@ export class OrtusSignIn extends LitElement {
       }
       .link {
         align-self: flex-start;
+        text-decoration: none;
         padding: 6px 0;
         border: 0;
         background: none;
@@ -54,7 +55,13 @@ export class OrtusSignIn extends LitElement {
   @state() private step: Step = "password";
   @state() private error: MessageKey | undefined;
   @state() private busy = false;
+  @state() private signupOpen = false;
   private ticket = "";
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    void site().then((s) => (this.signupOpen = s.signup_open)).catch(() => undefined);
+  }
 
   private go(me: Me): void {
     location.assign(homeFor(me));
@@ -154,6 +161,7 @@ export class OrtusSignIn extends LitElement {
           ${this.step === "recovery" || this.step === "code"
             ? html`<button class="link" @click=${() => this.show("password")}>${t(this.localize, "signIn.withPassword")}</button>`
             : html`<button class="link" @click=${() => this.show("recovery")}>${t(this.localize, "signIn.withRecovery")}</button>`}
+          ${this.signupOpen ? html`<a class="link" href="/sign-up">${t(this.localize, "signIn.createAccount")}</a>` : nothing}
         </div>
       </main>
     `;

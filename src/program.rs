@@ -188,12 +188,18 @@ pub struct AppWorker {
     instance: Arc<Instance>,
     worker: Worker,
     owners: Vec<(String, &'static str)>,
+    periodic: Vec<(&'static str, i64)>,
+    scheduled: std::sync::Mutex<i64>,
 }
 
 impl AppWorker {
     pub fn new(instance: Arc<Instance>, name: &str) -> Self {
         let mut worker = Worker::new(name);
         let mut owners = Vec::new();
+        for job in crate::core_jobs(&instance) {
+            owners.push((job.kind.clone(), "core"));
+            worker = worker.handle(&job.kind, job.handler);
+        }
         for app in &instance.apps {
             let id = app.info().id;
             for job in app.jobs(&instance) {
@@ -212,20 +218,51 @@ impl AppWorker {
             instance,
             worker,
             owners,
+            periodic: crate::PERIODIC.to_vec(),
+            scheduled: std::sync::Mutex::new(i64::MIN),
         }
+    }
+
+    /// Adds the periodic jobs that are due, at most once a minute. Their
+    /// ids carry the period they are for, so every worker adds the same
+    /// job and it runs once.
+    async fn schedule(&self, now_ms: i64) -> Result<(), String> {
+        {
+            let mut last = self.scheduled.lock().unwrap_or_else(|p| p.into_inner());
+            if now_ms.saturating_sub(*last) < 60_000 {
+                return Ok(());
+            }
+            *last = now_ms;
+        }
+        for (kind, period) in &self.periodic {
+            let id = format!("{kind}.{}", now_ms / period);
+            let job = crate::jobs::NewJob {
+                id: &id,
+                kind,
+                payload: "{}",
+                run_at: now_ms,
+                max_attempts: 3,
+            };
+            crate::jobs::enqueue(self.instance.store.as_ref(), &job, now_ms)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
     }
 
     /// Runs at most one due job. Jobs of a switched-off app stay in the
     /// queue until it is on again.
     pub async fn tick(&self, now_ms: i64) -> Result<bool, String> {
+        self.schedule(now_ms).await?;
         let mut kinds = Vec::new();
         for (kind, id) in &self.owners {
-            if self
-                .instance
-                .switches
-                .is_on(id)
-                .await
-                .map_err(|e| e.to_string())?
+            if *id == "core"
+                || self
+                    .instance
+                    .switches
+                    .is_on(id)
+                    .await
+                    .map_err(|e| e.to_string())?
             {
                 kinds.push(kind.as_str());
             }

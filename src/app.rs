@@ -23,7 +23,7 @@ use crate::config::Role;
 use crate::instance::Instance;
 use crate::jobs;
 use crate::services::Services;
-use crate::storage::{AsyncStore, BoxFuture, Migration, Schema, StoreResult};
+use crate::storage::{AsyncStore, AsyncTx, BoxFuture, Migration, Schema, StoreResult};
 
 /// The groups of the app switcher, in the order it shows them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -104,6 +104,18 @@ pub trait App: Send + Sync + 'static {
 
     /// Offers services to other apps, once at start.
     fn provide(&self, _instance: &Arc<Instance>, _services: &Services) {}
+
+    /// Deletes everything the app keeps for an account that is being
+    /// deleted (an expired demo account, or an administrator's deletion).
+    /// It works through `tx`, the deletion's own transaction, and must not
+    /// use the store otherwise; files go by queuing jobs in `tx`.
+    fn forget_user<'a>(
+        &'a self,
+        _tx: &'a mut dyn AsyncTx,
+        _user_id: &'a str,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 /// The schema of an app, named `<id>` in the migration history.

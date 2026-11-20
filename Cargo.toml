@@ -38,3 +38,12 @@ sha1 = "0.10"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 aws-lc-rs = "1.19"
 tokio-postgres-rustls = "0.13"
+lettre = { version = "0.11.24", default-features = false, features = ["smtp-transport", "tokio1", "tokio1-rustls", "rustls", "aws-lc-rs", "webpki-roots", "builder", "hostname"] }
+
+# Small debug builds: line numbers for our own code, no debug info for
+# dependencies (a full debug build of the tests took 25 GB).
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

@@ -65,6 +65,24 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         expires_at BIGINT NOT NULL
     )",
     },
+    Migration {
+        version: 4,
+        name: "sign-up and quotas",
+        sql: "CREATE TABLE core_email_checks (
+        ticket_hash TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES core_users (id),
+        code_hash TEXT NOT NULL,
+        attempts BIGINT NOT NULL,
+        expires_at BIGINT NOT NULL
+    );
+    CREATE TABLE core_signups (
+        user_id TEXT PRIMARY KEY,
+        address TEXT NOT NULL,
+        created_at BIGINT NOT NULL
+    );
+    CREATE INDEX core_signups_when ON core_signups (created_at);
+    ALTER TABLE core_users ADD COLUMN quota_bytes BIGINT",
+    },
 ];
 
 /// What a person may do in the installation as a whole.

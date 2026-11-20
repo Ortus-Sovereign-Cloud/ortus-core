@@ -110,6 +110,25 @@ export async function newRecoveryKit(): Promise<string[]> {
   return (await call<{ codes: string[] }>("POST", "/me/recovery-kit")).codes;
 }
 
+export interface Site {
+  website: boolean;
+  signup_open: boolean;
+  account_days: number | null;
+  quota_mb: number | null;
+}
+
+export async function site(): Promise<Site> {
+  return get<Site>("/site");
+}
+
+export async function signUp(email: string, name: string, language: string, acceptTerms: boolean): Promise<string> {
+  return (await call<{ ticket: string }>("POST", "/signup", { email, name, language, accept_terms: acceptTerms })).ticket;
+}
+
+export async function verifySignUp(ticket: string, code: string): Promise<Me> {
+  return call<Me>("POST", "/signup/verify", { ticket, code });
+}
+
 /** Where to go after signing in: the app used last, or the app chooser. */
 export function homeFor(me: Me): string {
   return me.chooser_seen && me.last_app ? `/${me.last_app}` : "/";

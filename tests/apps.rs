@@ -319,10 +319,9 @@ fn jobs_of_a_switched_off_app_wait_in_the_queue() {
     block_on(jobs::enqueue(store, &job, 0)).unwrap();
     block_on(instance.switches.set("notes", false, 1)).unwrap();
     let worker = AppWorker::new(Arc::clone(&instance), "test-worker");
-    assert!(
-        !block_on(worker.tick(10)).unwrap(),
-        "nothing may run while notes is off"
-    );
+    // The core's own jobs may run; the notes job must not.
+    while block_on(worker.tick(10)).unwrap() {}
+
     assert_eq!(
         Some(jobs::JobState::Queued),
         block_on(jobs::state(store, "add-1")).unwrap()

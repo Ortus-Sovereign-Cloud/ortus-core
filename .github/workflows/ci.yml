@@ -27,6 +27,11 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      mailpit:
+        image: axllent/mailpit:v1.27
+        ports:
+          - 1025:1025
+          - 8025:8025
       rustfs:
         image: rustfs/rustfs:1.0.6
         env:
@@ -46,6 +51,10 @@ jobs:
       ORTUS_TEST_S3_SECRET_KEY: ortussecret
       ORTUS_REQUIRE_S3: "1"
       ORTUS_REQUIRE_POSTGRES_TLS: "1"
+      # A test mail server for sign-up codes (never shipped).
+      ORTUS_TEST_SMTP: 127.0.0.1:1025
+      ORTUS_TEST_MAILPIT: http://127.0.0.1:8025
+      ORTUS_REQUIRE_SMTP: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

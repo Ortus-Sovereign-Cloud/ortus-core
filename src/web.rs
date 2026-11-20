@@ -32,6 +32,8 @@ pub const SCREENS: &[&str] = &[
     "/",
     "/setup",
     "/sign-in",
+    "/sign-up",
+    "/terms",
     "/welcome",
     "/apps",
     "/settings",

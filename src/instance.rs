@@ -104,13 +104,21 @@ pub mod testing {
     /// A fresh installation with `apps`, every schema installed. Its files
     /// directory is under the system's temporary directory.
     pub fn instance(apps: Vec<Arc<dyn App>>) -> Arc<Instance> {
+        instance_with(
+            Config::load(None, &|_| None).expect("the default configuration"),
+            apps,
+        )
+    }
+
+    /// As [`instance`], with these settings (the database and files are
+    /// always fresh ones).
+    pub fn instance_with(config: Config, apps: Vec<Arc<dyn App>>) -> Arc<Instance> {
         static NEXT: AtomicU32 = AtomicU32::new(0);
         let dir = std::env::temp_dir().join(format!(
             "ortus-core-instance-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::SeqCst)
         ));
-        let config = Config::load(None, &|_| None).expect("the default configuration");
         let store: Arc<dyn crate::storage::AsyncStore> =
             Arc::new(SqliteStore::in_memory().expect("an in-memory database"));
         crate::app::check(&apps).expect("apps that fit together");

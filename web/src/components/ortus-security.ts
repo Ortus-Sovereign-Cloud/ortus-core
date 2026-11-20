@@ -88,6 +88,15 @@ export class OrtusSecurity extends LitElement {
         border-block-end: 1px solid var(--ortus-line);
         font-size: 15px;
       }
+      .welcome {
+        max-inline-size: 1180px;
+        margin: 0 0 16px;
+        padding: 14px 16px;
+        border-radius: 12px;
+        background: rgba(79, 209, 197, 0.12);
+        color: var(--ortus-teal);
+        font-size: 15px;
+      }
       .note {
         color: var(--ortus-text-2);
         font-size: 14px;
@@ -177,6 +186,9 @@ export class OrtusSecurity extends LitElement {
     if (!s) return nothing;
     return html`
       <h1>${t(this.localize, "security.title")}</h1>
+      ${new URLSearchParams(location.search).has("welcome") && s.passkeys.length === 0 && !s.totp
+        ? html`<p class="welcome" role="status">${t(this.localize, "security.welcome")}</p>`
+        : nothing}
       ${this.message ? html`<p class=${this.message.error ? "error" : "note"} role=${this.message.error ? "alert" : "status"}>${t(this.localize, this.message.key)}</p>` : nothing}
       <div class="cards">
         <section aria-labelledby="passkeys">

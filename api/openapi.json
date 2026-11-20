@@ -1016,6 +1016,114 @@
           "accounts"
         ]
       }
+    },
+    "/api/v1/signup": {
+      "post": {
+        "operationId": "signUp",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "summary": "Start an account with {email, name, language, accept_terms}; a code goes to the address. Answers {ticket}.",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/api/v1/signup/verify": {
+      "post": {
+        "operationId": "verifySignUp",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "summary": "Finish signing up with {ticket, code}; signs in and answers next: add_sign_in_method.",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/api/v1/site": {
+      "get": {
+        "operationId": "getSite",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "summary": "What this installation offers before sign-in: the project website, open sign-up and its limits.",
+        "tags": [
+          "accounts"
+        ]
+      }
     }
   }
 }

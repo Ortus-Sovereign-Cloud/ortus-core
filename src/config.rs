@@ -20,6 +20,24 @@
 //! [apps]
 //! off = ["chat"]               # apps that start switched off
 //!
+//! [outgoing_mail]              # mail from Ortus itself (codes, notices)
+//! host = "smtp.example.org"
+//! port = 587
+//! security = "starttls"        # starttls, tls or none
+//! username = "ortus"
+//! password = "..."
+//! from = "Ortus <noreply@example.org>"
+//!
+//! [signup]                     # open sign-up, for a public demo
+//! open = false
+//! accounts_per_day = 200
+//! accounts_per_address_per_day = 3
+//! account_days = 30            # then the account and its data are deleted
+//! quota_mb = 100
+//!
+//! [site]
+//! website = false              # the project website at the root (demo)
+//!
 //! [files.s3]                   # omit for a directory in data_dir
 //! endpoint = "http://rustfs:9000"
 //! bucket = "ortus"
@@ -36,6 +54,9 @@
 //! | `ORTUS_DATABASE_URL`, `ORTUS_DATABASE_MAX_CONNECTIONS` | `[database]` |
 //! | `ORTUS_APPS_OFF` | `[apps] off`, comma separated |
 //! | `ORTUS_SETUP_TOKEN` | the first-start token (environment only) |
+//! | `ORTUS_MAIL_HOST`, `_PORT`, `_SECURITY`, `_USERNAME`, `_PASSWORD`, `_FROM` | `[outgoing_mail]` |
+//! | `ORTUS_SIGNUP_OPEN`, `_ACCOUNTS_PER_DAY`, `_ACCOUNTS_PER_ADDRESS_PER_DAY`, `_ACCOUNT_DAYS`, `_QUOTA_MB` | `[signup]` |
+//! | `ORTUS_SITE_WEBSITE` | `[site] website` |
 //! | `ORTUS_FILES_S3_ENDPOINT`, `_BUCKET`, `_REGION`, `_ACCESS_KEY`, `_SECRET_KEY`, `_ROOT` | `[files.s3]` |
 
 use std::collections::BTreeSet;
@@ -112,6 +133,13 @@ pub struct Config {
     pub files: FileStore,
     /// Apps that are off until an administrator turns them on.
     pub apps_off: Vec<String>,
+    /// Where mail from Ortus itself (codes, notices) is handed over, if
+    /// anywhere.
+    pub outgoing_mail: Option<OutgoingMail>,
+    pub signup: Signup,
+    /// Whether the root address shows the project website to visitors
+    /// (the public demo only).
+    pub website: bool,
     /// The first-start token, when an automated install chooses it
     /// (`ORTUS_SETUP_TOKEN`, environment only); otherwise a random one.
     pub setup_token: Option<Secret>,
@@ -131,6 +159,40 @@ impl fmt::Debug for Database {
                 .finish(),
         }
     }
+}
+
+/// How mail is handed to the mail server: SMTP submission.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OutgoingMail {
+    pub host: String,
+    pub port: u16,
+    pub security: MailSecurity,
+    pub username: Option<String>,
+    pub password: Option<Secret>,
+    /// The sender, as `Ortus <noreply@example.org>`.
+    pub from: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MailSecurity {
+    /// Plain connection upgraded with STARTTLS (port 587).
+    StartTls,
+    /// TLS from the first byte (port 465).
+    Tls,
+    /// No encryption: only for a server on the same machine.
+    None,
+}
+
+/// Open sign-up, for a public demo: anyone may make an account after an
+/// email check, within these limits.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Signup {
+    pub open: bool,
+    pub accounts_per_day: u32,
+    pub accounts_per_address_per_day: u32,
+    /// Accounts made by sign-up are deleted with their data after this.
+    pub account_days: u32,
+    pub quota_mb: u64,
 }
 
 /// A secret setting, shown as `***` in `Debug` output.
@@ -188,6 +250,39 @@ struct FileConfig {
     files: FilesSection,
     #[serde(default)]
     apps: AppsSection,
+    #[serde(default)]
+    outgoing_mail: MailSection,
+    #[serde(default)]
+    signup: SignupSection,
+    #[serde(default)]
+    site: SiteSection,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MailSection {
+    host: Option<String>,
+    port: Option<u16>,
+    security: Option<String>,
+    username: Option<String>,
+    password: Option<String>,
+    from: Option<String>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SignupSection {
+    open: Option<bool>,
+    accounts_per_day: Option<u32>,
+    accounts_per_address_per_day: Option<u32>,
+    account_days: Option<u32>,
+    quota_mb: Option<u64>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SiteSection {
+    website: Option<bool>,
 }
 
 #[derive(Default, Deserialize)]
@@ -360,6 +455,102 @@ impl Config {
                 "public_url '{public_url}' must start with https:// or http://"
             )));
         }
+        let number = |name: &str, value: Option<String>| -> Result<Option<u64>, ConfigError> {
+            value
+                .map(|text| {
+                    text.parse::<u64>()
+                        .map_err(|_| ConfigError(format!("{name} is '{text}', not a number")))
+                })
+                .transpose()
+        };
+        let flag = |name: &str, value: Option<String>| -> Result<Option<bool>, ConfigError> {
+            value
+                .map(|text| match text.as_str() {
+                    "1" | "true" | "yes" | "on" => Ok(true),
+                    "0" | "false" | "no" | "off" => Ok(false),
+                    other => Err(ConfigError(format!(
+                        "{name} is '{other}', not true or false"
+                    ))),
+                })
+                .transpose()
+        };
+        let mail = file.outgoing_mail;
+        let outgoing_mail = match env("ORTUS_MAIL_HOST").or(mail.host) {
+            None => None,
+            Some(host) => {
+                let security = match env("ORTUS_MAIL_SECURITY")
+                    .or(mail.security)
+                    .as_deref()
+                    .unwrap_or("starttls")
+                {
+                    "starttls" => MailSecurity::StartTls,
+                    "tls" => MailSecurity::Tls,
+                    "none" => MailSecurity::None,
+                    other => {
+                        return Err(ConfigError(format!(
+                            "outgoing_mail.security is '{other}'; use starttls, tls or none"
+                        )))
+                    }
+                };
+                let default_port = match security {
+                    MailSecurity::Tls => 465,
+                    MailSecurity::StartTls => 587,
+                    MailSecurity::None => 25,
+                };
+                let port = number("ORTUS_MAIL_PORT", env("ORTUS_MAIL_PORT"))?
+                    .map(|p| p as u16)
+                    .or(mail.port)
+                    .unwrap_or(default_port);
+                let from = env("ORTUS_MAIL_FROM").or(mail.from).ok_or_else(|| {
+                    ConfigError("outgoing_mail.from is needed with outgoing_mail.host".into())
+                })?;
+                Some(OutgoingMail {
+                    host,
+                    port,
+                    security,
+                    username: env("ORTUS_MAIL_USERNAME").or(mail.username),
+                    password: env("ORTUS_MAIL_PASSWORD").or(mail.password).map(Secret),
+                    from,
+                })
+            }
+        };
+        let signup = Signup {
+            open: flag("ORTUS_SIGNUP_OPEN", env("ORTUS_SIGNUP_OPEN"))?
+                .or(file.signup.open)
+                .unwrap_or(false),
+            accounts_per_day: number(
+                "ORTUS_SIGNUP_ACCOUNTS_PER_DAY",
+                env("ORTUS_SIGNUP_ACCOUNTS_PER_DAY"),
+            )?
+            .map(|n| n as u32)
+            .or(file.signup.accounts_per_day)
+            .unwrap_or(200),
+            accounts_per_address_per_day: number(
+                "ORTUS_SIGNUP_ACCOUNTS_PER_ADDRESS_PER_DAY",
+                env("ORTUS_SIGNUP_ACCOUNTS_PER_ADDRESS_PER_DAY"),
+            )?
+            .map(|n| n as u32)
+            .or(file.signup.accounts_per_address_per_day)
+            .unwrap_or(3),
+            account_days: number(
+                "ORTUS_SIGNUP_ACCOUNT_DAYS",
+                env("ORTUS_SIGNUP_ACCOUNT_DAYS"),
+            )?
+            .map(|n| n as u32)
+            .or(file.signup.account_days)
+            .unwrap_or(30),
+            quota_mb: number("ORTUS_SIGNUP_QUOTA_MB", env("ORTUS_SIGNUP_QUOTA_MB"))?
+                .or(file.signup.quota_mb)
+                .unwrap_or(100),
+        };
+        if signup.open && outgoing_mail.is_none() {
+            return Err(ConfigError(
+                "signup.open needs outgoing_mail, to send the email check".into(),
+            ));
+        }
+        let website = flag("ORTUS_SITE_WEBSITE", env("ORTUS_SITE_WEBSITE"))?
+            .or(file.site.website)
+            .unwrap_or(false);
         let apps_off = match env("ORTUS_APPS_OFF") {
             Some(list) => list
                 .split(',')
@@ -377,6 +568,9 @@ impl Config {
             database,
             files,
             apps_off,
+            outgoing_mail,
+            signup,
+            website,
             setup_token: env("ORTUS_SETUP_TOKEN").map(Secret),
         })
     }

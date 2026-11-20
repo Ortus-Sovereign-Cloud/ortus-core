@@ -14,6 +14,7 @@ pub mod files;
 pub mod instance;
 pub mod interfaces;
 pub mod jobs;
+pub mod mail_out;
 pub mod program;
 pub mod runtime;
 pub mod services;
@@ -41,6 +42,18 @@ pub fn schemas() -> Vec<storage::Schema> {
         auth::setup::SCHEMA,
     ]
 }
+
+/// The kinds of background job of the core.
+pub fn core_jobs(instance: &Arc<Instance>) -> Vec<app::JobKind> {
+    let mut all: Vec<app::JobKind> = mail_out::job(instance.config.outgoing_mail.clone())
+        .into_iter()
+        .collect();
+    all.push(auth::signup::expiry_job(Arc::clone(instance)));
+    all
+}
+
+/// Jobs the core runs on a schedule: (kind, every so many milliseconds).
+pub const PERIODIC: &[(&str, i64)] = &[(auth::signup::EXPIRY_JOB, 60 * 60 * 1000)];
 
 /// The web application of an installation: the public API and the web
 /// client of the core and its apps, with a request id on every request.

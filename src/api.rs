@@ -456,6 +456,7 @@ pub fn routes() -> Vec<Route> {
     let mut all = core_routes();
     all.extend(crate::auth::routes::routes());
     all.extend(crate::auth::passkeys::routes());
+    all.extend(crate::auth::signup::routes());
     all
 }
 
