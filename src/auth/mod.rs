@@ -7,6 +7,7 @@
 //! never say yes), so no other site can act for a signed-in person.
 
 pub mod accounts;
+pub mod admin_users;
 pub mod cbor;
 pub mod credentials;
 pub mod external;

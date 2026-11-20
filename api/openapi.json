@@ -143,6 +143,48 @@
         ]
       }
     },
+    "/api/v1/admin/groups": {
+      "get": {
+        "description": "For administrators and owners.",
+        "operationId": "listGroups",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "The groups and how many people are in each.",
+        "tags": [
+          "people"
+        ]
+      }
+    },
     "/api/v1/admin/oidc/clients": {
       "get": {
         "description": "For administrators and owners.",
@@ -435,6 +477,256 @@
         ]
       }
     },
+    "/api/v1/admin/users": {
+      "get": {
+        "description": "For administrators and owners.",
+        "operationId": "listPeople",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Everyone, with role, state, how they sign in, last activity, quota and groups. Query: q (name, address or group), filter (no_2fa, near_quota).",
+        "tags": [
+          "people"
+        ]
+      },
+      "post": {
+        "description": "For administrators and owners.",
+        "operationId": "invitePerson",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Invite someone: {email, name, role, groups, language}. They get a link by mail.",
+        "tags": [
+          "people"
+        ]
+      }
+    },
+    "/api/v1/admin/users/:id": {
+      "patch": {
+        "description": "For administrators and owners.",
+        "operationId": "changePerson",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Change a person: {name, role, state (suspended or active), quota_bytes, clear_quota}.",
+        "tags": [
+          "people"
+        ]
+      }
+    },
+    "/api/v1/admin/users/:id/devices": {
+      "get": {
+        "description": "For administrators and owners.",
+        "operationId": "listPersonDevices",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Where a person is signed in.",
+        "tags": [
+          "people"
+        ]
+      }
+    },
+    "/api/v1/admin/users/:id/reset": {
+      "post": {
+        "description": "For administrators and owners.",
+        "operationId": "resetSignIn",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Sign a person out everywhere, remove their sign-in methods and send a new invitation.",
+        "tags": [
+          "people"
+        ]
+      }
+    },
+    "/api/v1/admin/users/import": {
+      "post": {
+        "description": "For administrators and owners.",
+        "operationId": "importPeople",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Invite many: CSV text, one per line: email,name[,role[,group;group]].",
+        "tags": [
+          "people"
+        ]
+      }
+    },
     "/api/v1/apps": {
       "get": {
         "description": "For anyone signed in.",
@@ -562,6 +854,42 @@
         "summary": "Report that the server is up, and its version.",
         "tags": [
           "core"
+        ]
+      }
+    },
+    "/api/v1/invitation/accept": {
+      "post": {
+        "operationId": "acceptInvitation",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "summary": "Follow an invitation link: {token}. Signs in; next, add a sign-in method.",
+        "tags": [
+          "people"
         ]
       }
     },

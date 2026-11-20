@@ -50,6 +50,22 @@ pub fn already_signed_up(language: &str, site: &str) -> (String, String) {
     (subject.to_string(), body.replace("{site}", site))
 }
 
+/// The invitation to a new account.
+pub fn invitation(language: &str, inviter: &str, link: &str) -> (String, String) {
+    let (subject, body) = match language {
+        "pl" => ("{inviter} zaprasza Cię do Ortus", "{inviter} założył(a) dla Ciebie konto w Ortus.\n\nOtwórz ten link, aby je aktywować i dodać klucz dostępu:\n\n    {link}\n\nLink działa przez 7 dni i tylko raz."),
+        "uk" => ("{inviter} запрошує вас до Ortus", "{inviter} створив(ла) для вас обліковий запис в Ortus.\n\nВідкрийте це посилання, щоб активувати його й додати ключ доступу:\n\n    {link}\n\nПосилання діє 7 днів і лише один раз."),
+        "de" => ("{inviter} lädt Sie zu Ortus ein", "{inviter} hat ein Ortus-Konto für Sie angelegt.\n\nÖffnen Sie diesen Link, um es zu aktivieren und einen Passkey hinzuzufügen:\n\n    {link}\n\nDer Link gilt 7 Tage und nur einmal."),
+        "fr" => ("{inviter} vous invite sur Ortus", "{inviter} vous a créé un compte Ortus.\n\nOuvrez ce lien pour l’activer et ajouter une clé d’accès :\n\n    {link}\n\nLe lien est valable 7 jours, une seule fois."),
+        "ar" => ("يدعوك {inviter} إلى Ortus", "أنشأ {inviter} حسابًا لك في Ortus.\n\nافتح هذا الرابط لتفعيله وإضافة مفتاح مرور:\n\n    {link}\n\nيعمل الرابط لمدة 7 أيام ولمرة واحدة."),
+        _ => ("{inviter} invites you to Ortus", "{inviter} made an Ortus account for you.\n\nOpen this link to activate it and add a passkey:\n\n    {link}\n\nThe link works for 7 days, once."),
+    };
+    (
+        subject.replace("{inviter}", inviter),
+        body.replace("{inviter}", inviter).replace("{link}", link),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,12 +1,13 @@
 import { LitElement, css, html, nothing, svg } from "lit";
-import { customElement, state } from "lit/decorators.js";
+import { customElement, property, state } from "lit/decorators.js";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { LocalizeController } from "@lit-material/core/localize.js";
-import { installedApps, setPlace, type InstalledApp } from "../api.js";
+import { installedApps, setPlace, type InstalledApp, type Me } from "../api.js";
 import { LOCALES, setLocale, t } from "../i18n.js";
 import { APP_ICONS, tileTints } from "../icons.js";
 import type { MessageKey } from "../locales/en.js";
 import "./ortus-app-switcher.js";
+import "./ortus-admin.js";
 import "./ortus-security.js";
 
 /** How many apps the rail shows before "All apps". */
@@ -210,6 +211,7 @@ export class OrtusShell extends LitElement {
 
   private readonly localize = new LocalizeController(this);
 
+  @property({ attribute: false }) me: Me | undefined;
   @state() private apps: InstalledApp[] | undefined;
   @state() private failed = false;
   @state() private languageOpen = false;
@@ -227,7 +229,7 @@ export class OrtusShell extends LitElement {
       const path = location.pathname;
       const app = this.current();
       if (path === "/" || path === "/apps") void setPlace(null).catch(() => undefined);
-      else if (app) void setPlace(app.id).catch(() => undefined);
+      else if (app && app.id !== "admin") void setPlace(app.id).catch(() => undefined);
     } catch {
       this.apps = undefined;
       this.failed = true;
@@ -254,6 +256,7 @@ export class OrtusShell extends LitElement {
           </svg>
         </a>
         ${(this.apps ?? []).slice(0, RAIL_APPS).map((app) => this.railItem(app))}
+        ${this.me && this.me.role !== "member" ? this.railItem({ id: "admin", group: "organisation", path: "/admin" }) : nothing}
         <a class="item" href="/" aria-current=${location.pathname === "/" || location.pathname === "/apps" ? "page" : nothing} aria-label=${t(this.localize, "shell.allApps")}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <rect x="4" y="4" width="6" height="6" rx="1" />
@@ -288,6 +291,7 @@ export class OrtusShell extends LitElement {
   /** The app whose path the address is under, if it is installed. */
   private current(): InstalledApp | undefined {
     const path = location.pathname;
+    if (path === "/admin" || path.startsWith("/admin/")) return { id: "admin", group: "organisation", path: "/admin" };
     return (this.apps ?? []).find((app) => path === app.path || path.startsWith(`${app.path}/`));
   }
 
@@ -295,6 +299,9 @@ export class OrtusShell extends LitElement {
     const path = location.pathname;
     if (path === "/settings/security") {
       return html`<ortus-security></ortus-security>`;
+    }
+    if (path === "/admin" || path.startsWith("/admin/")) {
+      return html`<ortus-admin .me=${this.me}></ortus-admin>`;
     }
     if (path === "/" || path === "/apps" || this.apps === undefined) {
       return html`<ortus-app-switcher .apps=${this.apps} .failed=${this.failed} @retry=${() => this.load()}></ortus-app-switcher>`;

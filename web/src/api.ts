@@ -28,8 +28,10 @@ export async function call<T>(method: string, path: string, body?: unknown): Pro
   const headers: Record<string, string> = { Accept: "application/json" };
   // Every change says it comes from the Ortus client; other sites cannot.
   if (method !== "GET") headers["X-Requested-With"] = "ortus";
-  if (body !== undefined) headers["Content-Type"] = "application/json";
-  const response = await fetch(`/api/v1${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  // A string goes as it is (CSV); anything else as JSON.
+  if (body !== undefined) headers["Content-Type"] = typeof body === "string" ? "text/plain; charset=utf-8" : "application/json";
+  const payload = body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body);
+  const response = await fetch(`/api/v1${path}`, { method, headers, body: payload });
   if (!response.ok) {
     const body = (await response.json().catch(() => undefined)) as ApiErrorBody | undefined;
     throw new ApiError(response.status, body?.error.code ?? "unknown", body?.error.message ?? response.statusText, body?.error.request_id ?? "");

@@ -165,3 +165,26 @@ pub mod testing_auth {
         .expect("a session")
     }
 }
+
+/// Instances on a store a test chose (to run API tests on PostgreSQL).
+pub mod testing_store {
+    use std::sync::Arc;
+
+    use super::{schemas, Instance};
+    use crate::app::App;
+    use crate::config::Config;
+    use crate::files::Files;
+    use crate::storage::{install, AsyncStore};
+
+    pub fn instance(store: Arc<dyn AsyncStore>, apps: Vec<Arc<dyn App>>) -> Arc<Instance> {
+        let config = Config::load(None, &|_| None).expect("the default configuration");
+        crate::runtime::block_on(install(store.as_ref(), &schemas(&apps), 0)).expect("the schemas");
+        let dir = std::env::temp_dir().join(format!(
+            "ortus-core-store-instance-{}-{}",
+            std::process::id(),
+            crate::auth::random_hex(4)
+        ));
+        let files = Arc::new(Files::local(&dir).expect("a files directory"));
+        Instance::assemble(config, store, files, apps)
+    }
+}

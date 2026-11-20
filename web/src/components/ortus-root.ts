@@ -74,6 +74,7 @@ export class OrtusRoot extends LitElement {
       case "website":
         return html`<ortus-website .signupOpen=${this.view.signupOpen}></ortus-website>`;
       case "app":
+        return html`<ortus-shell .me=${this.view.me}></ortus-shell>`;
       case "failed":
         return html`<ortus-shell></ortus-shell>`;
       default:

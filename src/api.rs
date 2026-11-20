@@ -178,6 +178,9 @@ fn status(code: u16) -> &'static StatusCodeReasonPhrase {
         403 => STATUS_CODE_REASON_PHRASE.n403_forbidden,
         404 => STATUS_CODE_REASON_PHRASE.n404_not_found,
         409 => STATUS_CODE_REASON_PHRASE.n409_conflict,
+        410 => STATUS_CODE_REASON_PHRASE.n410_gone,
+        413 => STATUS_CODE_REASON_PHRASE.n413_payload_too_large,
+        422 => STATUS_CODE_REASON_PHRASE.n422_unprocessable_entity,
         429 => STATUS_CODE_REASON_PHRASE.n429_too_many_requests,
         _ => STATUS_CODE_REASON_PHRASE.n500_internal_server_error,
     }
@@ -583,6 +586,7 @@ pub fn routes() -> Vec<Route> {
     all.extend(crate::oidc::routes::routes());
     all.extend(crate::auth::external::routes());
     all.extend(crate::auth::saml::routes());
+    all.extend(crate::auth::admin_users::routes());
     all
 }
 
