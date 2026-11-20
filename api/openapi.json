@@ -658,6 +658,109 @@
         ]
       }
     },
+    "/api/v1/session": {
+      "get": {
+        "operationId": "getSession",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "user": {
+                      "description": "The signed-in account, or null.",
+                      "oneOf": [
+                        {
+                          "properties": {
+                            "chooser_seen": {
+                              "description": "Whether the person has seen the app chooser once.",
+                              "type": "boolean"
+                            },
+                            "email": {
+                              "type": "string"
+                            },
+                            "expires_at": {
+                              "description": "When a demo account is deleted, in Unix milliseconds.",
+                              "type": [
+                                "integer",
+                                "null"
+                              ]
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "language": {
+                              "description": "The language chosen in personal settings.",
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "last_app": {
+                              "description": "The app opened last; the client opens it after sign-in.",
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "role": {
+                              "enum": [
+                                "member",
+                                "admin",
+                                "owner"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "email",
+                            "name",
+                            "role",
+                            "chooser_seen"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "user"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "summary": "Who is signed in on this session, if anyone (never an error).",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
     "/api/v1/session/code": {
       "post": {
         "operationId": "signInWithCode",

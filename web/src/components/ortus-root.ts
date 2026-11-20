@@ -1,13 +1,14 @@
 import { LitElement, html } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import { ApiError, me, setupNeeded, type Me } from "../api.js";
+import { session, setupNeeded, site, type Me } from "../api.js";
 import "./ortus-setup.js";
 import "./ortus-shell.js";
 import "./ortus-sign-in.js";
 import "./ortus-sign-up.js";
 import "./ortus-terms.js";
+import "./ortus-website.js";
 
-type View = { kind: "loading" } | { kind: "setup" } | { kind: "sign-in" } | { kind: "sign-up" } | { kind: "terms" } | { kind: "app"; me: Me } | { kind: "failed" };
+type View = { kind: "loading" } | { kind: "setup" } | { kind: "sign-in" } | { kind: "sign-up" } | { kind: "terms" } | { kind: "website"; signupOpen: boolean } | { kind: "app"; me: Me } | { kind: "failed" };
 
 /**
  * Decides what the address shows: the setup page on a new installation,
@@ -32,23 +33,29 @@ export class OrtusRoot extends LitElement {
       this.view = { kind: "terms" };
       return;
     }
+    let user: Me | null;
     try {
-      this.view = { kind: "app", me: await me() };
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 401) {
-        const needed = await setupNeeded().catch(() => false);
-        if (needed) {
-          history.replaceState(null, "", "/setup");
-          this.view = { kind: "setup" };
-        } else if (location.pathname === "/sign-up") {
-          this.view = { kind: "sign-up" };
-        } else {
-          if (location.pathname !== "/sign-in") history.replaceState(null, "", "/sign-in");
-          this.view = { kind: "sign-in" };
-        }
-      } else {
-        this.view = { kind: "failed" };
-      }
+      user = await session();
+    } catch {
+      this.view = { kind: "failed" };
+      return;
+    }
+    if (user) {
+      this.view = { kind: "app", me: user };
+      return;
+    }
+    const needed = await setupNeeded().catch(() => false);
+    const about = location.pathname === "/" ? await site().catch(() => undefined) : undefined;
+    if (about?.website && !needed) {
+      this.view = { kind: "website", signupOpen: about.signup_open };
+    } else if (needed) {
+      history.replaceState(null, "", "/setup");
+      this.view = { kind: "setup" };
+    } else if (location.pathname === "/sign-up") {
+      this.view = { kind: "sign-up" };
+    } else {
+      if (location.pathname !== "/sign-in") history.replaceState(null, "", "/sign-in");
+      this.view = { kind: "sign-in" };
     }
   }
 
@@ -62,6 +69,8 @@ export class OrtusRoot extends LitElement {
         return html`<ortus-sign-up></ortus-sign-up>`;
       case "terms":
         return html`<ortus-terms></ortus-terms>`;
+      case "website":
+        return html`<ortus-website .signupOpen=${this.view.signupOpen}></ortus-website>`;
       case "app":
       case "failed":
         return html`<ortus-shell></ortus-shell>`;

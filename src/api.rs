@@ -310,6 +310,24 @@ fn me(
     })
 }
 
+fn session_state(
+    request: Request,
+    _: PathParams,
+    _: ConnectionInfo,
+    ortus: Arc<Instance>,
+) -> BoxFuture<'static, Response> {
+    Box::pin(async move {
+        let user = crate::auth::current(&request, &ortus)
+            .await
+            .map(|s| user_json(&s.user));
+        ok(&json!({ "user": user }))
+    })
+}
+
+fn session_schema() -> Value {
+    json!({"type": "object", "required": ["user"], "properties": {"user": {"description": "The signed-in account, or null.", "oneOf": [user_schema(), {"type": "null"}]}}})
+}
+
 fn sign_out(
     request: Request,
     _: PathParams,
@@ -471,6 +489,16 @@ fn core_routes() -> Vec<Route> {
             access: crate::auth::Access::Signed,
             response: user_schema,
             handler: me,
+        },
+        Route {
+            method: Method::Get,
+            path: "/session",
+            id: "getSession",
+            tag: "accounts",
+            summary: "Who is signed in on this session, if anyone (never an error).",
+            access: crate::auth::Access::Public,
+            response: session_schema,
+            handler: session_state,
         },
         Route {
             method: Method::Get,

@@ -23,7 +23,7 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { browserName: "chromium" } }],
   webServer: {
     command: `rm -rf test-results/data && ${binary}`,
-    env: { ORTUS_ROLES: "web,worker", ORTUS_WEB_PORT: String(port), ORTUS_DATA_DIR: "test-results/data", ORTUS_SETUP_TOKEN: "e2e-setup-token", ORTUS_PUBLIC_URL: `http://localhost:${port}`, ...signup },
+    env: { ORTUS_ROLES: "web,worker", ORTUS_WEB_PORT: String(port), ORTUS_DATA_DIR: "test-results/data", ORTUS_SETUP_TOKEN: "e2e-setup-token", ORTUS_PUBLIC_URL: `http://localhost:${port}`, ORTUS_SITE_WEBSITE: "true", ...signup },
     url: `http://127.0.0.1:${port}/api/v1/health`,
     reuseExistingServer: false,
     timeout: 30_000,

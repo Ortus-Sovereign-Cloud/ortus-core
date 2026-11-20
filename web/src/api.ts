@@ -52,6 +52,11 @@ export interface Me {
   expires_at: number | null;
 }
 
+/** The signed-in account, or null; never an error for visitors. */
+export async function session(): Promise<Me | null> {
+  return (await get<{ user: Me | null }>("/session")).user;
+}
+
 export async function me(): Promise<Me> {
   return get<Me>("/me");
 }
