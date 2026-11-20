@@ -197,7 +197,9 @@ fn searching(store: Arc<dyn AsyncStore>) {
     let hit = find(&olena, "clause").remove(0);
     assert!(hit.snippet.contains("clause 4"), "{}", hit.snippet);
     // Removed and replaced.
-    block_on(search::remove(s, "mail", "m2")).unwrap();
+    let mut tx = block_on(s.begin()).unwrap();
+    block_on(search::remove_in(tx.as_mut(), s.engine(), "mail", "m2")).unwrap();
+    block_on(tx.commit()).unwrap();
     add(
         "mail",
         "m1",

@@ -143,6 +143,28 @@ pub async fn remove(store: &dyn AsyncStore, app: &str, id: &str) -> StoreResult<
     tx.commit().await
 }
 
+/// Takes an item out of the index inside a transaction (a job's).
+pub async fn remove_in(
+    tx: &mut dyn crate::storage::AsyncTx,
+    engine: Engine,
+    app: &str,
+    id: &str,
+) -> StoreResult<()> {
+    if engine == Engine::Sqlite {
+        tx.execute(
+            "INSERT INTO core_search_fts (core_search_fts, rowid, title, body) SELECT 'delete', rowid, title, body FROM core_search WHERE app = $1 AND id = $2",
+            &[app.into(), id.into()],
+        )
+        .await?;
+    }
+    tx.execute(
+        "DELETE FROM core_search WHERE app = $1 AND id = $2",
+        &[app.into(), id.into()],
+    )
+    .await?;
+    Ok(())
+}
+
 /// Everything of an account's, for forgetting it.
 pub async fn forget(store: &dyn AsyncStore, owner: &str) -> StoreResult<()> {
     let ids: Vec<(String, String)> = store
