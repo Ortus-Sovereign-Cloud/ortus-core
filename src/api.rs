@@ -582,6 +582,7 @@ pub fn routes() -> Vec<Route> {
     all.extend(crate::audit::routes());
     all.extend(crate::oidc::routes::routes());
     all.extend(crate::auth::external::routes());
+    all.extend(crate::auth::saml::routes());
     all
 }
 

@@ -540,14 +540,19 @@ pub fn register(
 }
 
 async fn list_public(_: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiError> {
-    let rows = ortus
-        .store
-        .query(
-            "SELECT id, name FROM core_external_providers ORDER BY name",
-            &[],
-        )
-        .await?;
-    let providers: Vec<Value> = rows.iter().map(|r| json!({"id": r.text(0), "name": r.text(1), "start": format!("/auth/external/{}/start", r.text(0).unwrap_or_default())})).collect();
+    let mut providers: Vec<Value> = Vec::new();
+    for (sql, kind) in [
+        ("SELECT id, name FROM core_external_providers", "external"),
+        ("SELECT id, name FROM core_saml_providers", "saml"),
+    ] {
+        for r in ortus.store.query(sql, &[]).await? {
+            let id = r.text(0).unwrap_or_default().to_string();
+            providers.push(
+                json!({"id": id, "name": r.text(1), "start": format!("/auth/{kind}/{id}/start")}),
+            );
+        }
+    }
+    providers.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
     Ok(ok(&json!({ "providers": providers })))
 }
 
@@ -707,7 +712,7 @@ fn any_object() -> Value {
 
 pub fn routes() -> Vec<Route> {
     vec![
-        Route { method: Method::Get, path: "/session/providers", id: "listSignInProviders", tag: "sign-in", summary: "The outside providers people can sign in with, and where each sign-in starts.", access: Access::Public, response: any_object, handler: h_list },
+        Route { method: Method::Get, path: "/session/providers", id: "listSignInProviders", tag: "sign-in", summary: "The outside providers (OpenID Connect and SAML) people can sign in with, and where each sign-in starts.", access: Access::Public, response: any_object, handler: h_list },
         Route { method: Method::Post, path: "/admin/sign-in/providers", id: "addSignInProvider", tag: "sign-in", summary: "Add an outside OpenID Connect provider: {id, name, issuer, client_id, client_secret, scopes, link_by_email, create_accounts}. Answers the redirect_uri to register at the provider.", access: Access::Owner, response: any_object, handler: h_add },
         Route { method: Method::Delete, path: "/admin/sign-in/providers/:id", id: "removeSignInProvider", tag: "sign-in", summary: "Remove an outside provider and its links to accounts.", access: Access::Owner, response: any_object, handler: h_remove },
     ]

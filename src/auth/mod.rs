@@ -14,6 +14,8 @@ pub mod limits;
 pub mod mail_text;
 pub mod passkeys;
 pub mod routes;
+pub mod saml;
+pub mod saml_verify;
 pub mod sessions;
 pub mod setup;
 pub mod signup;

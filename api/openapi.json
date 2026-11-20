@@ -351,6 +351,90 @@
         ]
       }
     },
+    "/api/v1/admin/sign-in/saml": {
+      "post": {
+        "description": "For owners.",
+        "operationId": "addSamlProvider",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Add a SAML identity provider: {id, name, entity_id, sso_url, certificate, email_attribute, link_by_email, create_accounts}. Answers Ortus's entity id and answer address for the provider.",
+        "tags": [
+          "sign-in"
+        ]
+      }
+    },
+    "/api/v1/admin/sign-in/saml/:id": {
+      "delete": {
+        "description": "For owners.",
+        "operationId": "removeSamlProvider",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Remove a SAML identity provider and its links to accounts.",
+        "tags": [
+          "sign-in"
+        ]
+      }
+    },
     "/api/v1/apps": {
       "get": {
         "description": "For anyone signed in.",
@@ -1277,7 +1361,7 @@
             "description": "Any error, in the common error format."
           }
         },
-        "summary": "The outside providers people can sign in with, and where each sign-in starts.",
+        "summary": "The outside providers (OpenID Connect and SAML) people can sign in with, and where each sign-in starts.",
         "tags": [
           "sign-in"
         ]

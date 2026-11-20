@@ -179,6 +179,9 @@ pub fn is_served(uri: &str, app_paths: &[String]) -> bool {
         || app_paths.iter().any(|app| under(app))
         || PROBES.contains(&path)
         || path == "/.well-known/openid-configuration"
+        || (path.starts_with("/auth/saml/")
+            && (path.ends_with("/start") || path.ends_with("/acs") || path.ends_with("/metadata"))
+            && path.matches('/').count() == 4)
         || (path.starts_with("/auth/external/")
             && (path.ends_with("/start") || path.ends_with("/callback"))
             && path.matches('/').count() == 4)
