@@ -6,6 +6,7 @@ import { t } from "../i18n.js";
 import type { MessageKey } from "../locales/en.js";
 import "./ortus-admin-overview.js";
 import "./ortus-admin-signin.js";
+import "./ortus-admin-sovereignty.js";
 import "./ortus-admin-users.js";
 
 interface Section {
@@ -18,6 +19,7 @@ const SECTIONS: Section[] = [
   { path: "/admin", label: "admin.overview" },
   { path: "/admin/users", label: "admin.users" },
   { path: "/admin/sign-in", label: "admin.signIn" },
+  { path: "/admin/sovereignty", label: "admin.sovereignty" },
 ];
 
 /** The admin console: its own navigation beside the section shown. */
@@ -107,6 +109,8 @@ export class OrtusAdmin extends LitElement {
         return html`<ortus-admin-users .me=${this.me}></ortus-admin-users>`;
       case "/admin/sign-in":
         return html`<ortus-admin-signin .me=${this.me}></ortus-admin-signin>`;
+      case "/admin/sovereignty":
+        return html`<ortus-admin-sovereignty .me=${this.me}></ortus-admin-sovereignty>`;
       default:
         return html`<ortus-admin-overview .me=${this.me}></ortus-admin-overview>`;
     }
