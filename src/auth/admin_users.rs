@@ -215,7 +215,7 @@ async fn invite_one(ortus: &Instance, me: &User, input: &Invite) -> Result<User,
         _ => ApiError::internal(),
     })?;
     for group in input.groups.iter().flatten() {
-        join(store, group, &user.id).await?;
+        join_group(store, group, &user.id).await?;
     }
     send_invite(ortus, &user, &me.name, input.language.as_deref()).await?;
     super::audit(
@@ -230,7 +230,7 @@ async fn invite_one(ortus: &Instance, me: &User, input: &Invite) -> Result<User,
 }
 
 /// Adds the person to the group named `name`, making the group if needed.
-async fn join(store: &dyn AsyncStore, name: &str, user_id: &str) -> StoreResult<()> {
+pub async fn join_group(store: &dyn AsyncStore, name: &str, user_id: &str) -> StoreResult<()> {
     let name = name.trim();
     if name.is_empty() {
         return Ok(());

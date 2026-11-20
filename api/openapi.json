@@ -143,6 +143,130 @@
         ]
       }
     },
+    "/api/v1/admin/directory": {
+      "get": {
+        "description": "For administrators and owners.",
+        "operationId": "getDirectory",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "The directory connection (without its password) and the last sync.",
+        "tags": [
+          "people"
+        ]
+      },
+      "put": {
+        "description": "For owners.",
+        "operationId": "connectDirectory",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Connect the organisation's directory: {url, bind_dn, password, base_dn, user_filter, group_filter, mail_attribute, name_attribute, ca_certificate}. Checked before it is kept.",
+        "tags": [
+          "people"
+        ]
+      }
+    },
+    "/api/v1/admin/directory/sync": {
+      "post": {
+        "description": "For administrators and owners.",
+        "operationId": "syncDirectory",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Bring people and groups in from the directory now.",
+        "tags": [
+          "people"
+        ]
+      }
+    },
     "/api/v1/admin/groups": {
       "get": {
         "description": "For administrators and owners.",

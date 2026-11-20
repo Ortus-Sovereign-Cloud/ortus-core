@@ -1,0 +1,27 @@
+dn: ou=people,dc=ministry,dc=example
+objectClass: organizationalUnit
+ou: people
+
+dn: uid=olena,ou=people,dc=ministry,dc=example
+objectClass: inetOrgPerson
+uid: olena
+cn: Olena Hrytsenko
+sn: Hrytsenko
+mail: olena@ministry.example
+
+dn: uid=marek,ou=people,dc=ministry,dc=example
+objectClass: inetOrgPerson
+uid: marek
+cn: Marek Nowak
+sn: Nowak
+mail: marek@ministry.example
+
+dn: ou=groups,dc=ministry,dc=example
+objectClass: organizationalUnit
+ou: groups
+
+dn: cn=Logistics,ou=groups,dc=ministry,dc=example
+objectClass: groupOfNames
+cn: Logistics
+member: uid=olena,ou=people,dc=ministry,dc=example
+member: uid=marek,ou=people,dc=ministry,dc=example

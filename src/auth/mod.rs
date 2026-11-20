@@ -10,6 +10,7 @@ pub mod accounts;
 pub mod admin_users;
 pub mod cbor;
 pub mod credentials;
+pub mod directory;
 pub mod external;
 pub mod limits;
 pub mod mail_text;

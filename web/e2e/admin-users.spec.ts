@@ -68,3 +68,18 @@ test("screenshot for comparing with the board", async ({ page }) => {
   await page.waitForTimeout(300);
   await page.screenshot({ path: "test-results/admin-users.png" });
 });
+
+test("the owner connects the directory and brings people in", async ({ page }) => {
+  test.skip(!process.env.ORTUS_TEST_LDAP, "needs a test directory (ORTUS_TEST_LDAP)");
+  await page.goto("/admin/users");
+  await page.getByRole("button", { name: en["people.connectDirectory"] }).click();
+  await page.getByLabel(en["people.directoryUrl"]).fill(process.env.ORTUS_TEST_LDAP!);
+  await page.getByLabel(en["people.directoryBind"]).fill("cn=admin,dc=ministry,dc=example");
+  await page.getByLabel(en["people.directoryPassword"]).fill("adminpass");
+  await page.getByLabel(en["people.directoryBase"]).fill("dc=ministry,dc=example");
+  await page.getByRole("button", { name: en["people.connect"], exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText(en["people.directoryConnected"]);
+  await page.getByRole("button", { name: en["people.syncDirectory"] }).click();
+  await expect(page.getByRole("status")).toHaveText(en["people.directorySynced"].replace("{created}", "2").replace("{updated}", "0").replace("{groups}", "1"));
+  await expect(page.getByRole("row").filter({ hasText: "olena@ministry.example" })).toBeVisible();
+});

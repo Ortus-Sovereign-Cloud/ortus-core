@@ -45,6 +45,7 @@ pub fn schemas() -> Vec<storage::Schema> {
         auth::SCHEMA,
         auth::setup::SCHEMA,
         auth::admin_users::SCHEMA,
+        auth::directory::SCHEMA,
         audit::SCHEMA,
         oidc::SCHEMA,
         auth::external::SCHEMA,

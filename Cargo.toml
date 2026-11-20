@@ -44,6 +44,7 @@ roxmltree = "0.21.2"
 miniz_oxide = "0.8"
 uppsala = "0.12"
 bergshamra-xml = "0.12"
+ldap3 = { version = "0.12", default-features = false, features = ["tls-rustls-aws-lc-rs"] }
 
 # Small debug builds: line numbers for our own code, no debug info for
 # dependencies (a full debug build of the tests took 25 GB).

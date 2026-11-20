@@ -74,6 +74,7 @@ jobs:
       ORTUS_REQUIRE_IDP: "1"
       ORTUS_TEST_SAML: http://127.0.0.1:58081
       ORTUS_REQUIRE_SAML: "1"
+      ORTUS_REQUIRE_LDAP: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -91,6 +92,8 @@ jobs:
             sleep 2
           done
           exit 1
+      - name: A test directory (OpenLDAP) with people and groups
+        run: ci/ldap-test.sh 51389 | sed 's/^export //' >> "$GITHUB_ENV"
       - name: A PostgreSQL that speaks TLS, with its own CA
         run: ci/postgres-tls.sh 55433 "$RUNNER_TEMP/pgtls" | sed 's/^export //' | tr ' ' '\n' >> "$GITHUB_ENV"
       - uses: actions/setup-node@v4

@@ -261,6 +261,7 @@ export class OrtusAdminUsers extends LitElement {
   @state() private filter = "";
   @state() private selected: Person | undefined;
   @state() private devices: Device[] = [];
+  @state() private directory: { connected: boolean; url?: string; base_dn?: string; last_sync_at?: number | null } | undefined;
   @state() private message: { key: MessageKey; error: boolean; args?: Record<string, string | number> } | undefined;
 
   override connectedCallback(): void {
@@ -273,6 +274,7 @@ export class OrtusAdminUsers extends LitElement {
     if (this.query) params.set("q", this.query);
     if (this.filter) params.set("filter", this.filter);
     this.listing = await call<Listing>("GET", `/admin/users?${params}`);
+    this.directory = await call<{ connected: boolean }>("GET", "/admin/directory").catch(() => undefined);
     if (this.selected) this.selected = this.listing.users.find((u) => u.id === this.selected!.id) ?? this.selected;
   }
 
@@ -318,6 +320,27 @@ export class OrtusAdminUsers extends LitElement {
       await this.load();
     } catch {
       this.message = { key: "people.failed", error: true };
+    }
+  }
+
+  private connectDirectory(event: SubmitEvent): void {
+    event.preventDefault();
+    const form = event.target as HTMLFormElement;
+    const data = Object.fromEntries(new FormData(form).entries());
+    void this.act(async () => {
+      await call("PUT", "/admin/directory", data);
+      this.renderRoot.querySelector<HTMLDialogElement>("#directory")?.close();
+    }, "people.directoryConnected");
+  }
+
+  private async syncDirectory(): Promise<void> {
+    this.message = undefined;
+    try {
+      const result = await call<{ created: number; updated: number; groups: number }>("POST", "/admin/directory/sync");
+      this.message = { key: "people.directorySynced", error: false, args: { created: result.created, updated: result.updated, groups: result.groups } };
+      await this.load();
+    } catch {
+      this.message = { key: "people.directoryFailed", error: true };
     }
   }
 
@@ -390,6 +413,11 @@ export class OrtusAdminUsers extends LitElement {
             <p class="sub">${t(this.localize, "people.count", { count: l.total })} · ${t(this.localize, "people.groups", { count: l.groups })}</p>
           </div>
           <div class="actions">
+            ${this.directory?.connected
+              ? html`<button class="button" @click=${this.syncDirectory}>${t(this.localize, "people.syncDirectory")}</button>`
+              : this.me?.role === "owner"
+                ? html`<button class="button" @click=${() => this.renderRoot.querySelector<HTMLDialogElement>("#directory")?.showModal()}>${t(this.localize, "people.connectDirectory")}</button>`
+                : nothing}
             <label class="button" for="csv">${t(this.localize, "people.import")}</label>
             <input id="csv" type="file" accept=".csv,text/csv" hidden @change=${this.importFile} />
             <button class="button primary" @click=${() => this.renderRoot.querySelector<HTMLDialogElement>("#invite")?.showModal()}>${t(this.localize, "people.invite")}</button>
@@ -445,6 +473,23 @@ export class OrtusAdminUsers extends LitElement {
         </table>
       </div>
       ${this.selected ? this.panel(this.selected) : nothing}
+      <dialog id="directory" aria-labelledby="directory-title">
+        <form @submit=${this.connectDirectory}>
+          <h2 id="directory-title">${t(this.localize, "people.connectDirectory")}</h2>
+          <label for="d-url">${t(this.localize, "people.directoryUrl")}</label>
+          <input id="d-url" name="url" required placeholder="ldaps://directory.example.org" />
+          <label for="d-bind">${t(this.localize, "people.directoryBind")}</label>
+          <input id="d-bind" name="bind_dn" required />
+          <label for="d-password">${t(this.localize, "people.directoryPassword")}</label>
+          <input id="d-password" name="password" type="password" autocomplete="off" required />
+          <label for="d-base">${t(this.localize, "people.directoryBase")}</label>
+          <input id="d-base" name="base_dn" required placeholder="dc=example,dc=org" />
+          <div class="row">
+            <button type="button" class="button" @click=${() => this.renderRoot.querySelector<HTMLDialogElement>("#directory")?.close()}>${t(this.localize, "people.cancel")}</button>
+            <button class="button primary">${t(this.localize, "people.connect")}</button>
+          </div>
+        </form>
+      </dialog>
       <dialog id="invite" aria-labelledby="invite-title">
         <form @submit=${this.invite}>
           <h2 id="invite-title">${t(this.localize, "people.invite")}</h2>
