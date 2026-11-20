@@ -101,8 +101,8 @@ fn password_and_one_time_code() {
         None,
         json!({"email": "taras@ministry.example", "password": "flood plan 2026 R-12"}),
     );
-    assert_eq!(403, alone.status());
-    assert_eq!("second_factor_required", json_of(&alone)["error"]["code"]);
+    assert_eq!(401, alone.status());
+    assert_eq!("wrong_credentials", json_of(&alone)["error"]["code"]);
 
     let started = json_of(&api.post("/api/v1/me/totp", Some(&token), json!({})));
     assert!(started["uri"]

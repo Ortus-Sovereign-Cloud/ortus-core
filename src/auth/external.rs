@@ -36,10 +36,11 @@ use crate::oidc::{challenge_of, sha256_hex};
 use crate::program::now_ms;
 use crate::storage::{AsyncStore, BoxFuture, Migration, Schema, StoreResult};
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "outside sign-in providers",
-    sql: "CREATE TABLE core_external_providers (
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "outside sign-in providers",
+        sql: "CREATE TABLE core_external_providers (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         issuer TEXT NOT NULL,
@@ -65,7 +66,44 @@ const MIGRATIONS: &[Migration] = &[Migration {
         created_at BIGINT NOT NULL,
         PRIMARY KEY (provider, subject)
     )",
-}];
+    },
+    Migration {
+        version: 2,
+        name: "trips bound to the browser",
+        sql: "ALTER TABLE core_external_states ADD COLUMN binding_hash TEXT",
+    },
+];
+
+/// The cookie that ties a trip to the provider to the browser that
+/// started it, so nobody can finish their own sign-in in someone else's
+/// browser (login CSRF).
+fn trip_cookie(secure: bool) -> &'static str {
+    if secure {
+        "__Host-ortus-trip"
+    } else {
+        "ortus-trip"
+    }
+}
+
+fn trip_header(value: &str, secure: bool, max_age: i64) -> Header {
+    let flags = if secure { "; Secure" } else { "" };
+    Header {
+        name: "Set-Cookie".to_string().into(),
+        value: format!(
+            "{}={value}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}{flags}",
+            trip_cookie(secure)
+        )
+        .into(),
+    }
+}
+
+fn trip_value(request: &Request, secure: bool) -> Option<String> {
+    let cookies = request.header("cookie")?;
+    cookies.value.split(';').find_map(|pair| {
+        let (name, value) = pair.trim().split_once('=')?;
+        (name == trip_cookie(secure)).then(|| value.to_string())
+    })
+}
 
 pub const SCHEMA: Schema = Schema {
     app: "core.external",
@@ -188,7 +226,8 @@ fn start(
         let return_to = form::query(&request.request_uri, "return")
             .filter(|r| r.starts_with('/') && !r.starts_with("//") && !r.starts_with("/\\"))
             .unwrap_or_else(|| "/".into());
-        let (state, nonce, verifier) = (
+        let (state, nonce, verifier, binding) = (
+            super::random_token(),
             super::random_token(),
             super::random_token(),
             super::random_token(),
@@ -196,8 +235,8 @@ fn start(
         let saved = ortus
             .store
             .execute(
-                "INSERT INTO core_external_states (state_hash, provider, nonce, verifier, return_to, expires_at) VALUES ($1, $2, $3, $4, $5, $6)",
-                &[sha256_hex(&state).into(), id.as_str().into(), nonce.as_str().into(), verifier.as_str().into(), return_to.into(), (now_ms() + STATE_MS).into()],
+                "INSERT INTO core_external_states (state_hash, provider, nonce, verifier, return_to, expires_at, binding_hash) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                &[sha256_hex(&state).into(), id.as_str().into(), nonce.as_str().into(), verifier.as_str().into(), return_to.into(), (now_ms() + STATE_MS).into(), sha256_hex(&binding).into()],
             )
             .await;
         if saved.is_err() {
@@ -212,7 +251,7 @@ fn start(
                 form::encode(&provider.scopes),
                 challenge_of(&verifier)
             ),
-            None,
+            Some(trip_header(&binding, ortus.config.secure(), STATE_MS / 1000)),
         )
     })
 }
@@ -388,7 +427,7 @@ fn callback(
         let taken = async {
             let hash = sha256_hex(&state);
             let mut tx = store.begin().await?;
-            let rows = tx.query("SELECT provider, nonce, verifier, return_to, expires_at FROM core_external_states WHERE state_hash = $1", &[hash.as_str().into()]).await?;
+            let rows = tx.query("SELECT provider, nonce, verifier, return_to, expires_at, binding_hash FROM core_external_states WHERE state_hash = $1", &[hash.as_str().into()]).await?;
             tx.execute("DELETE FROM core_external_states WHERE state_hash = $1 OR expires_at < $2", &[hash.as_str().into(), now_ms().into()]).await?;
             tx.commit().await?;
             Ok::<_, crate::storage::StoreError>(rows.into_iter().next())
@@ -398,6 +437,11 @@ fn callback(
             return failed("expired");
         };
         if row.text(0) != Some(id.as_str()) || row.int(4).unwrap_or_default() < now_ms() {
+            return failed("expired");
+        }
+        // Only the browser that started the trip may finish it.
+        let bound = trip_value(&request, ortus.config.secure()).map(|v| sha256_hex(&v));
+        if bound.is_none() || bound.as_deref() != row.text(5) {
             return failed("expired");
         }
         let (nonce, verifier, return_to) = (

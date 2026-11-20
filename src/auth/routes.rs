@@ -139,16 +139,15 @@ async fn password_sign_in(
         .await;
         return Err(wrong());
     };
-    limits::succeeded(store, &keys).await?;
     if credentials::has_totp(store, &user.id).await? {
+        // The limits are cleared only once the whole sign-in succeeds.
         let ticket = new_ticket(store, &user.id, "password").await?;
         return Ok(ok(&json!({ "next": "code", "ticket": ticket })));
     }
-    Err(ApiError {
-        status: 403,
-        code: "second_factor_required",
-        message: "A password needs a one-time code here, and this account has no authenticator app. Sign in with a passkey or a recovery code.".into(),
-    })
+    // A password alone does not sign in here. Answering anything but
+    // "wrong" would tell a guesser the password is right.
+    limits::failed(store, &keys, now_ms()).await?;
+    Err(wrong())
 }
 
 #[derive(Deserialize)]
@@ -199,7 +198,15 @@ async fn code_sign_in(
         // The ticket is used up; a new try starts with the password.
         return Err(wrong());
     }
-    limits::succeeded(store, &keys).await?;
+    // The whole sign-in worked: forget the failures of the address too.
+    limits::succeeded(
+        store,
+        &limits::keys(
+            &user.email,
+            &crate::auth::client_address(request, connection, &ortus.config.trusted_proxies),
+        ),
+    )
+    .await?;
     Ok(signed_in(
         request,
         connection,

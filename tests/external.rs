@@ -98,6 +98,22 @@ fn a_person_signs_in_with_an_outside_provider() {
     .unwrap();
     let start = client.get("/auth/external/eid/start?return=%2Fmail").send();
     assert_eq!(302, start.status());
+    let trip = start
+        .header("Set-Cookie")
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_string();
+    assert!(trip.starts_with("ortus-trip="), "{trip}");
+    let trip = start
+        .header("Set-Cookie")
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_string();
+    assert!(trip.starts_with("ortus-trip="), "{trip}");
     let authorize = start.header("Location").unwrap().to_string();
     assert!(
         authorize.starts_with(&format!("{issuer}/authorize?"))
@@ -121,7 +137,7 @@ fn a_person_signs_in_with_an_outside_provider() {
         path.starts_with("/auth/external/eid/callback?code="),
         "{path}"
     );
-    let landed = client.get(&path).send();
+    let landed = client.get(&path).header("Cookie", &trip).send();
     assert_eq!(302, landed.status(), "{}", landed.body_text());
     assert_eq!(Some("/mail"), landed.header("Location"));
     let cookie = landed
@@ -136,11 +152,41 @@ fn a_person_signs_in_with_an_outside_provider() {
     // The answer works once.
     assert_eq!(
         Some("/sign-in?external=expired"),
-        client.get(&path).send().header("Location")
+        client
+            .get(&path)
+            .header("Cookie", &trip)
+            .send()
+            .header("Location")
+    );
+    // Another browser (without the trip cookie) cannot finish a sign-in.
+    let start = client.get("/auth/external/eid/start").send();
+    let back = at_provider(
+        start.header("Location").unwrap(),
+        "iryna-subject",
+        &json!({"email": "iryna@ministry.example", "email_verified": true}),
+    );
+    let path = back
+        .split_once("://")
+        .unwrap()
+        .1
+        .split_once('/')
+        .map(|(_, rest)| format!("/{rest}"))
+        .unwrap();
+    assert_eq!(
+        Some("/sign-in?external=expired"),
+        client.get(&path).send().header("Location"),
+        "no trip cookie"
     );
 
     // Someone the provider knows but Ortus does not: refused.
     let start = client.get("/auth/external/eid/start").send();
+    let trip = start
+        .header("Set-Cookie")
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_string();
     let back = at_provider(
         start.header("Location").unwrap(),
         "stranger",
@@ -155,6 +201,10 @@ fn a_person_signs_in_with_an_outside_provider() {
         .unwrap();
     assert_eq!(
         Some("/sign-in?external=no_account"),
-        client.get(&path).send().header("Location")
+        client
+            .get(&path)
+            .header("Cookie", &trip)
+            .send()
+            .header("Location")
     );
 }
