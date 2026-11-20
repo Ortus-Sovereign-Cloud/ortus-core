@@ -516,7 +516,7 @@ fn callback(
         .await
         {
             Ok(token) => {
-                let lifetime = super::sessions::Lifetime::default();
+                let lifetime = crate::auth::policy::lifetime(ortus.store.as_ref()).await;
                 redirect(
                     &return_to,
                     Some(super::set_cookie(
@@ -553,7 +553,11 @@ async fn list_public(_: &Request, ortus: &Arc<Instance>) -> Result<Response, Api
         }
     }
     providers.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
-    Ok(ok(&json!({ "providers": providers })))
+    let password = super::policy::current(ortus.store.as_ref())
+        .await
+        .map(|p| p.password)
+        .unwrap_or(true);
+    Ok(ok(&json!({ "providers": providers, "password": password })))
 }
 
 #[derive(Deserialize)]

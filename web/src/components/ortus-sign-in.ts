@@ -71,6 +71,8 @@ export class OrtusSignIn extends LitElement {
   ];
   private readonly localize = new LocalizeController(this);
   @state() private step: Step = "password";
+  /** Off when the owner allows passkeys only. */
+  @state() private passwordAllowed = true;
   @state() private error: MessageKey | undefined;
   @state() private busy = false;
   @state() private signupOpen = false;
@@ -80,7 +82,12 @@ export class OrtusSignIn extends LitElement {
   override connectedCallback(): void {
     super.connectedCallback();
     void site().then((s) => (this.signupOpen = s.signup_open)).catch(() => undefined);
-    void signInProviders().then((p) => (this.providers = p)).catch(() => undefined);
+    void signInProviders()
+      .then((p) => {
+        this.providers = p.providers;
+        this.passwordAllowed = p.password;
+      })
+      .catch(() => undefined);
     // Back from an outside provider that did not let the person in.
     const external = new URLSearchParams(location.search).get("external");
     if (external) this.error = EXTERNAL[external] ?? "signIn.failed";
@@ -174,7 +181,7 @@ export class OrtusSignIn extends LitElement {
           ? html`<div class="actions">
                 <button class="button primary" ?disabled=${this.busy} @click=${this.passkey}>${t(this.localize, "signIn.withPasskey")}</button>
               </div>
-              <p class="or">${t(this.localize, "signIn.or")}</p>`
+              ${this.passwordAllowed ? html`<p class="or">${t(this.localize, "signIn.or")}</p>` : nothing}`
           : nothing}
         ${this.step === "password" && this.providers.length
           ? html`<div class="providers">
@@ -185,7 +192,7 @@ export class OrtusSignIn extends LitElement {
               })}
             </div>`
           : nothing}
-        <form @submit=${this.submit}>
+        <form @submit=${this.submit} ?hidden=${this.step === "password" && !this.passwordAllowed}>
           ${this.fields()}
           ${this.error ? html`<p class="error" role="alert">${t(this.localize, this.error)}</p>` : nothing}
           <div class="actions">

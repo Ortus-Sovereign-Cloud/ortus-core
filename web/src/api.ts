@@ -147,8 +147,10 @@ export interface Provider {
   start: string;
 }
 
-export async function signInProviders(): Promise<Provider[]> {
-  return (await get<{ providers: Provider[] }>("/session/providers")).providers;
+/** The outside providers, and whether passwords are allowed here. */
+export async function signInProviders(): Promise<{ providers: Provider[]; password: boolean }> {
+  const answer = await get<{ providers: Provider[]; password?: boolean }>("/session/providers");
+  return { providers: answer.providers, password: answer.password !== false };
 }
 
 /** Where to go after signing in: the app used last, or the app chooser. */

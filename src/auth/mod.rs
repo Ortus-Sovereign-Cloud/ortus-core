@@ -15,6 +15,7 @@ pub mod external;
 pub mod limits;
 pub mod mail_text;
 pub mod passkeys;
+pub mod policy;
 pub mod routes;
 pub mod saml;
 pub mod saml_verify;
@@ -177,7 +178,7 @@ pub async fn current(request: &Request, ortus: &Arc<Instance>) -> Option<Session
     sessions::find(
         ortus.store.as_ref(),
         &token,
-        sessions::Lifetime::default(),
+        crate::auth::policy::lifetime(ortus.store.as_ref()).await,
         crate::program::now_ms(),
     )
     .await

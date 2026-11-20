@@ -444,7 +444,7 @@ pub async fn start_session(
         methods,
         &address,
         &agent,
-        crate::auth::sessions::Lifetime::default(),
+        crate::auth::policy::lifetime(ortus.store.as_ref()).await,
         crate::program::now_ms(),
     )
     .await
@@ -481,7 +481,7 @@ pub async fn signed_in_with(
     methods: &str,
     extra: Value,
 ) -> Response {
-    let lifetime = crate::auth::sessions::Lifetime::default();
+    let lifetime = crate::auth::policy::lifetime(ortus.store.as_ref()).await;
     let started = start_session(request, connection, ortus, user, methods).await;
     match started {
         Ok(token) => {
@@ -588,6 +588,7 @@ pub fn routes() -> Vec<Route> {
     all.extend(crate::auth::saml::routes());
     all.extend(crate::auth::admin_users::routes());
     all.extend(crate::auth::directory::routes());
+    all.extend(crate::auth::policy::routes());
     all
 }
 

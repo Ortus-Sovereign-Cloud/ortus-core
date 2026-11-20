@@ -109,6 +109,13 @@ async fn password_sign_in(
 ) -> Result<Response, ApiError> {
     let input: PasswordBody = body(request)?;
     let store = ortus.store.as_ref();
+    if !super::policy::current(store).await?.password {
+        return Err(ApiError {
+            status: 403,
+            code: "password_off",
+            message: "Passwords are turned off here. Sign in with a passkey.".into(),
+        });
+    }
     let keys = limits::keys(
         &input.email,
         &crate::auth::client_address(request, connection, &ortus.config.trusted_proxies),

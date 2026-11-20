@@ -155,3 +155,15 @@ test.describe("an outside sign-in service", () => {
     });
   }
 });
+
+test.describe("when the owner allows passkeys only", () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test("the sign-in page has no password form", async ({ page }) => {
+    await page.route("**/api/v1/session/providers", (route) => route.fulfill({ json: { providers: [], password: false } }));
+    await page.goto("/sign-in");
+    await expect(page.getByRole("heading", { level: 1, name: en["signIn.title"] })).toBeVisible();
+    await expect(page.getByLabel(en["signIn.password"])).toBeHidden();
+    await expect(page.getByRole("button", { name: en["signIn.withPasskey"] })).toBeVisible();
+  });
+});

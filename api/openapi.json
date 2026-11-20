@@ -433,6 +433,88 @@
         ]
       }
     },
+    "/api/v1/admin/sign-in": {
+      "get": {
+        "description": "For administrators and owners.",
+        "operationId": "getSignInPolicy",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "The sign-in policy, who still depends on a password, today's numbers and recent sign-ins.",
+        "tags": [
+          "sign-in"
+        ]
+      },
+      "put": {
+        "description": "For owners.",
+        "operationId": "setSignInPolicy",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Set the sign-in policy: {password, session_idle_days, session_max_days}. Turning passwords off is refused while someone would be locked out.",
+        "tags": [
+          "sign-in"
+        ]
+      }
+    },
     "/api/v1/admin/sign-in/providers": {
       "post": {
         "description": "For owners.",

@@ -4,6 +4,7 @@ import { LocalizeController } from "@lit-material/core/localize.js";
 import type { Me } from "../api.js";
 import { t } from "../i18n.js";
 import type { MessageKey } from "../locales/en.js";
+import "./ortus-admin-signin.js";
 import "./ortus-admin-users.js";
 
 interface Section {
@@ -15,6 +16,7 @@ interface Section {
 const SECTIONS: Section[] = [
   { path: "/admin", label: "admin.overview" },
   { path: "/admin/users", label: "admin.users" },
+  { path: "/admin/sign-in", label: "admin.signIn" },
 ];
 
 /** The admin console: its own navigation beside the section shown. */
@@ -95,6 +97,17 @@ export class OrtusAdmin extends LitElement {
   private readonly localize = new LocalizeController(this);
   @property({ attribute: false }) me: Me | undefined;
 
+  private section(path: string) {
+    switch (path) {
+      case "/admin/users":
+        return html`<ortus-admin-users .me=${this.me}></ortus-admin-users>`;
+      case "/admin/sign-in":
+        return html`<ortus-admin-signin .me=${this.me}></ortus-admin-signin>`;
+      default:
+        return html`<slot></slot>`;
+    }
+  }
+
   override render() {
     const path = location.pathname.replace(/\/$/, "") || "/admin";
     if (this.me && this.me.role === "member") {
@@ -110,7 +123,7 @@ export class OrtusAdmin extends LitElement {
             (s) => html`<a href=${s.path} aria-current=${path === s.path ? "page" : nothing}>${t(this.localize, s.label)}</a>`,
           )}
         </nav>
-        <div class="content">${path === "/admin/users" ? html`<ortus-admin-users .me=${this.me}></ortus-admin-users>` : html`<slot></slot>`}</div>
+        <div class="content">${this.section(path)}</div>
       </div>
     `;
   }

@@ -441,7 +441,7 @@ fn acs(
             .await
         {
             Ok(token) => {
-                let lifetime = super::sessions::Lifetime::default();
+                let lifetime = crate::auth::policy::lifetime(ortus.store.as_ref()).await;
                 redirect(
                     &return_to,
                     vec![
