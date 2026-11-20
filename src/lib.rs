@@ -6,6 +6,7 @@
 
 pub mod api;
 pub mod app;
+pub mod auth;
 pub mod backup;
 pub mod cli;
 pub mod config;
@@ -33,7 +34,12 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Every database schema of the core, in the order they are installed.
 /// Apps add their own after these.
 pub fn schemas() -> Vec<storage::Schema> {
-    vec![jobs::SCHEMA, app::SWITCHES_SCHEMA]
+    vec![
+        jobs::SCHEMA,
+        app::SWITCHES_SCHEMA,
+        auth::SCHEMA,
+        auth::setup::SCHEMA,
+    ]
 }
 
 /// The web application of an installation: the public API and the web

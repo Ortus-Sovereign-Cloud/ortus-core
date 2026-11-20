@@ -195,6 +195,7 @@ test("a failed load says so and can be retried", async ({ page }) => {
 test("the keyboard reaches everything, starting with a skip link", async ({ page }) => {
   await withApps(page);
   await page.goto("/");
+  await expect(page.locator("ortus-app-switcher a.app")).toHaveCount(11);
   await page.keyboard.press("Tab");
   const skip = page.getByRole("link", { name: en["shell.skip"] });
   await expect(skip).toBeFocused();

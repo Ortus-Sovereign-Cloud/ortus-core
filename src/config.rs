@@ -11,6 +11,7 @@
 //! [web]
 //! ip = "0.0.0.0"
 //! port = 7878
+//! public_url = "https://ortus.example.org"   # where people reach it
 //!
 //! [database]                   # omit for SQLite in data_dir
 //! url = "postgres://ortus:secret@db/ortus"
@@ -31,9 +32,10 @@
 //! | `ORTUS_CONFIG` | path of the TOML file (default `ortus.toml`, if present) |
 //! | `ORTUS_ROLES` | `roles`, comma separated |
 //! | `ORTUS_DATA_DIR` | `data_dir` |
-//! | `ORTUS_WEB_IP`, `ORTUS_WEB_PORT` | `[web]` |
+//! | `ORTUS_WEB_IP`, `ORTUS_WEB_PORT`, `ORTUS_PUBLIC_URL` | `[web]` |
 //! | `ORTUS_DATABASE_URL`, `ORTUS_DATABASE_MAX_CONNECTIONS` | `[database]` |
 //! | `ORTUS_APPS_OFF` | `[apps] off`, comma separated |
+//! | `ORTUS_SETUP_TOKEN` | the first-start token (environment only) |
 //! | `ORTUS_FILES_S3_ENDPOINT`, `_BUCKET`, `_REGION`, `_ACCESS_KEY`, `_SECRET_KEY`, `_ROOT` | `[files.s3]` |
 
 use std::collections::BTreeSet;
@@ -103,10 +105,16 @@ pub struct Config {
     pub data_dir: PathBuf,
     pub web_ip: String,
     pub web_port: u16,
+    /// The address people reach this installation at, without a trailing
+    /// slash: in links, cookies, passkeys and sign-in with other services.
+    pub public_url: String,
     pub database: Database,
     pub files: FileStore,
     /// Apps that are off until an administrator turns them on.
     pub apps_off: Vec<String>,
+    /// The first-start token, when an automated install chooses it
+    /// (`ORTUS_SETUP_TOKEN`, environment only); otherwise a random one.
+    pub setup_token: Option<String>,
 }
 
 /// A configuration that cannot be used, with the setting at fault.
@@ -147,6 +155,7 @@ struct AppsSection {
 struct WebSection {
     ip: Option<String>,
     port: Option<u16>,
+    public_url: Option<String>,
 }
 
 #[derive(Default, Deserialize)]
@@ -175,6 +184,12 @@ struct S3Section {
 }
 
 impl Config {
+    /// Whether people reach this installation over HTTPS, so cookies must
+    /// say Secure.
+    pub fn secure(&self) -> bool {
+        self.public_url.starts_with("https://")
+    }
+
     /// Reads the configuration of this process: the file named by
     /// `ORTUS_CONFIG` (or `ortus.toml` when it exists), then the
     /// environment.
@@ -289,6 +304,16 @@ impl Config {
             _ => return Err(ConfigError("S3 file storage needs endpoint, bucket, access_key and secret_key; some are missing".into())),
         };
 
+        let public_url = env("ORTUS_PUBLIC_URL")
+            .or(file.web.public_url)
+            .unwrap_or_else(|| format!("http://{web_ip}:{web_port}"))
+            .trim_end_matches('/')
+            .to_string();
+        if !(public_url.starts_with("https://") || public_url.starts_with("http://")) {
+            return Err(ConfigError(format!(
+                "public_url '{public_url}' must start with https:// or http://"
+            )));
+        }
         let apps_off = match env("ORTUS_APPS_OFF") {
             Some(list) => list
                 .split(',')
@@ -302,9 +327,11 @@ impl Config {
             data_dir,
             web_ip,
             web_port,
+            public_url,
             database,
             files,
             apps_off,
+            setup_token: env("ORTUS_SETUP_TOKEN"),
         })
     }
 

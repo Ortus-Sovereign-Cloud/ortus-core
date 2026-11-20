@@ -59,6 +59,24 @@ pub async fn run_until(
 
     let instance = Instance::open(config, apps, now_ms()).await?;
     let config = &instance.config;
+    if config.has(Role::Web) {
+        match crate::auth::setup::prepare(&instance, config.setup_token.as_deref(), false, now_ms())
+            .await
+        {
+            Ok(Some(link)) => {
+                println!("ortus: setup: no account yet; create the first owner at {link}")
+            }
+            Ok(None) => {
+                if crate::auth::setup::needed(instance.store.as_ref())
+                    .await
+                    .unwrap_or(false)
+                {
+                    println!("ortus: setup: no account yet; the setup link was printed before (run `ortus setup-link` for a new one)");
+                }
+            }
+            Err(e) => eprintln!("ortus: setup: {e}"),
+        }
+    }
 
     let stopping = Arc::new(AtomicBool::new(false));
     let worker = config.has(Role::Worker).then(|| {

@@ -78,6 +78,8 @@ pub struct Route {
     /// Which part of Ortus it belongs to, for grouping in the reference.
     pub tag: &'static str,
     pub summary: &'static str,
+    /// Who may call it.
+    pub access: crate::auth::Access,
     /// The JSON schema of the 200 response body.
     pub response: fn() -> Value,
     pub handler: Handler,
@@ -106,6 +108,38 @@ impl ApiError {
         Self {
             status: 400,
             code: "bad_request",
+            message: message.into(),
+        }
+    }
+
+    pub fn sign_in() -> Self {
+        Self {
+            status: 401,
+            code: "unauthenticated",
+            message: "Sign in first.".into(),
+        }
+    }
+
+    pub fn forbidden() -> Self {
+        Self {
+            status: 403,
+            code: "forbidden",
+            message: "You are not allowed to do this.".into(),
+        }
+    }
+
+    pub fn conflict(message: impl Into<String>) -> Self {
+        Self {
+            status: 409,
+            code: "conflict",
+            message: message.into(),
+        }
+    }
+
+    pub fn too_many(message: impl Into<String>) -> Self {
+        Self {
+            status: 429,
+            code: "too_many_requests",
             message: message.into(),
         }
     }
@@ -147,6 +181,29 @@ fn status(code: u16) -> &'static StatusCodeReasonPhrase {
         429 => STATUS_CODE_REASON_PHRASE.n429_too_many_requests,
         _ => STATUS_CODE_REASON_PHRASE.n500_internal_server_error,
     }
+}
+
+/// The JSON body of a request, read as `T`.
+pub fn body<T: serde::de::DeserializeOwned>(request: &Request) -> Result<T, ApiError> {
+    serde_json::from_slice(request.body.as_bytes()).map_err(|e| {
+        ApiError::bad_request(format!(
+            "The request body is not what this route takes: {e}"
+        ))
+    })
+}
+
+/// Adds headers (such as `Set-Cookie`) to a response.
+pub fn with_headers(
+    mut response: Response,
+    headers: Vec<rust_web_server::header::Header>,
+) -> Response {
+    response.headers.extend(headers);
+    response
+}
+
+/// The response for an error result, or the result's own response.
+pub fn answer(request: &Request, result: Result<Response, ApiError>) -> Response {
+    result.unwrap_or_else(|e| e.response(request))
 }
 
 /// A 200 response with a JSON body.
@@ -214,15 +271,220 @@ fn apps_schema() -> Value {
     })
 }
 
+fn user_json(user: &crate::auth::accounts::User) -> Value {
+    json!({
+        "id": user.id, "email": user.email, "name": user.name, "role": user.role.name(),
+        "language": user.language, "last_app": user.last_app, "chooser_seen": user.chooser_seen,
+        "expires_at": user.expires_at,
+    })
+}
+
+fn user_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["id", "email", "name", "role", "chooser_seen"],
+        "properties": {
+            "id": {"type": "string"},
+            "email": {"type": "string"},
+            "name": {"type": "string"},
+            "role": {"type": "string", "enum": ["member", "admin", "owner"]},
+            "language": {"type": ["string", "null"], "description": "The language chosen in personal settings."},
+            "last_app": {"type": ["string", "null"], "description": "The app opened last; the client opens it after sign-in."},
+            "chooser_seen": {"type": "boolean", "description": "Whether the person has seen the app chooser once."},
+            "expires_at": {"type": ["integer", "null"], "description": "When a demo account is deleted, in Unix milliseconds."}
+        }
+    })
+}
+
+fn me(
+    request: Request,
+    _: PathParams,
+    _: ConnectionInfo,
+    ortus: Arc<Instance>,
+) -> BoxFuture<'static, Response> {
+    Box::pin(async move {
+        match crate::auth::current(&request, &ortus).await {
+            Some(session) => ok(&user_json(&session.user)),
+            None => ApiError::sign_in().response(&request),
+        }
+    })
+}
+
+fn sign_out(
+    request: Request,
+    _: PathParams,
+    _: ConnectionInfo,
+    ortus: Arc<Instance>,
+) -> BoxFuture<'static, Response> {
+    Box::pin(async move {
+        if let Some(token) = crate::auth::token(&request) {
+            if crate::auth::sessions::end(ortus.store.as_ref(), &token)
+                .await
+                .is_err()
+            {
+                return ApiError::internal().response(&request);
+            }
+        }
+        with_headers(
+            ok(&json!({"signed_out": true})),
+            vec![crate::auth::clear_cookie(ortus.config.secure())],
+        )
+    })
+}
+
+fn signed_out_schema() -> Value {
+    json!({"type": "object", "required": ["signed_out"], "properties": {"signed_out": {"type": "boolean"}}})
+}
+
+fn setup_state(
+    request: Request,
+    _: PathParams,
+    _: ConnectionInfo,
+    ortus: Arc<Instance>,
+) -> BoxFuture<'static, Response> {
+    Box::pin(async move {
+        match crate::auth::setup::needed(ortus.store.as_ref()).await {
+            Ok(needed) => ok(&json!({ "needed": needed })),
+            Err(_) => ApiError::internal().response(&request),
+        }
+    })
+}
+
+fn setup_state_schema() -> Value {
+    json!({"type": "object", "required": ["needed"], "properties": {"needed": {"type": "boolean", "description": "Whether the installation still needs its first owner."}}})
+}
+
+#[derive(serde::Deserialize)]
+struct SetupBody {
+    token: String,
+    email: String,
+    name: String,
+}
+
+/// Starts a session for `user` and answers with the account and the
+/// session cookie (and the token, for apps that are not browsers).
+pub async fn signed_in(
+    request: &Request,
+    connection: &ConnectionInfo,
+    ortus: &Arc<Instance>,
+    user: &crate::auth::accounts::User,
+    methods: &str,
+) -> Response {
+    let lifetime = crate::auth::sessions::Lifetime::default();
+    let agent = request
+        .header("user-agent")
+        .map(|h| h.value.to_string())
+        .unwrap_or_default();
+    let started = crate::auth::sessions::start(
+        ortus.store.as_ref(),
+        &user.id,
+        methods,
+        &connection.client.ip,
+        &agent,
+        lifetime,
+        crate::program::now_ms(),
+    )
+    .await;
+    match started {
+        Ok(token) => {
+            let mut body = user_json(user);
+            body["session_token"] = json!(token);
+            with_headers(
+                ok(&body),
+                vec![crate::auth::set_cookie(
+                    &token,
+                    ortus.config.secure(),
+                    lifetime.max_ms / 1000,
+                )],
+            )
+        }
+        Err(_) => ApiError::internal().response(request),
+    }
+}
+
+fn setup(
+    request: Request,
+    _: PathParams,
+    connection: ConnectionInfo,
+    ortus: Arc<Instance>,
+) -> BoxFuture<'static, Response> {
+    Box::pin(async move {
+        let body: SetupBody = match body(&request) {
+            Ok(body) => body,
+            Err(e) => return e.response(&request),
+        };
+        use crate::auth::setup::{create_owner, SetupError};
+        match create_owner(ortus.store.as_ref(), &body.token, &body.email, &body.name, crate::program::now_ms()).await {
+            Ok(user) => signed_in(&request, &connection, &ortus, &user, "setup").await,
+            Err(SetupError::Done) => ApiError::conflict("This installation already has its owner.").response(&request),
+            Err(SetupError::BadToken) => ApiError { status: 403, code: "bad_setup_token", message: "This setup link is not valid. Run `ortus setup-link` on the server for a new one.".into() }.response(&request),
+            Err(SetupError::BadEmail) => ApiError::bad_request("That is not an email address.").response(&request),
+            Err(SetupError::BadName) => ApiError::bad_request("Give a name.").response(&request),
+            Err(SetupError::Store(_)) => ApiError::internal().response(&request),
+        }
+    })
+}
+
+fn signed_in_schema() -> Value {
+    let mut schema = user_schema();
+    schema["properties"]["session_token"] = json!({"type": "string", "description": "The session token. Browsers get it as a cookie too; apps send it as `Authorization: Bearer`."});
+    if let Some(required) = schema["required"].as_array_mut() {
+        required.push(json!("session_token"));
+    }
+    schema
+}
+
 /// Every operation of the core API. Apps add their own.
 pub fn routes() -> Vec<Route> {
     vec![
+        Route {
+            method: Method::Get,
+            path: "/me",
+            id: "getMe",
+            tag: "accounts",
+            summary: "The signed-in person's account.",
+            access: crate::auth::Access::Signed,
+            response: user_schema,
+            handler: me,
+        },
+        Route {
+            method: Method::Get,
+            path: "/setup",
+            id: "getSetup",
+            tag: "accounts",
+            summary: "Whether the installation still needs its first owner.",
+            access: crate::auth::Access::Public,
+            response: setup_state_schema,
+            handler: setup_state,
+        },
+        Route {
+            method: Method::Post,
+            path: "/setup",
+            id: "createOwner",
+            tag: "accounts",
+            summary:
+                "Create the first owner with the token from the setup link, and sign in as them.",
+            access: crate::auth::Access::Public,
+            response: signed_in_schema,
+            handler: setup,
+        },
+        Route {
+            method: Method::Post,
+            path: "/session/sign-out",
+            id: "signOut",
+            tag: "accounts",
+            summary: "End this session and remove its cookie.",
+            access: crate::auth::Access::Public,
+            response: signed_out_schema,
+            handler: sign_out,
+        },
         Route {
             method: Method::Get,
             path: "/health",
             id: "getHealth",
             tag: "core",
             summary: "Report that the server is up, and its version.",
+            access: crate::auth::Access::Public,
             response: health_schema,
             handler: health,
         },
@@ -232,6 +494,7 @@ pub fn routes() -> Vec<Route> {
             id: "listApps",
             tag: "core",
             summary: "List the apps that are installed and switched on.",
+            access: crate::auth::Access::Signed,
             response: apps_schema,
             handler: apps,
         },
@@ -254,12 +517,29 @@ pub fn register(
     }
     for (owner, route) in all {
         let path = format!("{PREFIX}{}", route.path);
-        let handler = route.handler;
+        let (handler, access) = (route.handler, route.access);
         let guarded = move |request: Request,
                             params: PathParams,
                             connection: ConnectionInfo,
                             shared: Arc<Arc<Instance>>| async move {
             let ortus: Arc<Instance> = Arc::clone(&*shared);
+            match crate::auth::check(&request, &ortus, access).await {
+                Ok(_) => {}
+                Err(crate::auth::Refusal::SignIn) => return ApiError::sign_in().response(&request),
+                Err(crate::auth::Refusal::Forbidden) => {
+                    return ApiError::forbidden().response(&request)
+                }
+                Err(crate::auth::Refusal::NotFromClient) => {
+                    return ApiError {
+                        status: 403,
+                        code: "not_from_client",
+                        message:
+                            "Changes must come from the Ortus client (X-Requested-With: ortus)."
+                                .into(),
+                    }
+                    .response(&request)
+                }
+            }
             if let Some(id) = owner {
                 if !ortus.switches.is_on(id).await.unwrap_or(false) {
                     return ApiError::not_installed(id).response(&request);
@@ -291,7 +571,7 @@ pub fn reference(routes: &[Route]) -> Value {
     let error_response = |description: &str| json!({"description": description, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}});
     let mut paths = Map::new();
     for route in routes {
-        let operation = json!({
+        let mut operation = json!({
             "operationId": route.id,
             "tags": [route.tag],
             "summary": route.summary,
@@ -300,6 +580,14 @@ pub fn reference(routes: &[Route]) -> Value {
                 "default": error_response("Any error, in the common error format.")
             }
         });
+        if route.access != crate::auth::Access::Public {
+            operation["security"] = json!([{"session": []}]);
+            operation["description"] = json!(match route.access {
+                crate::auth::Access::Admin => "For administrators and owners.",
+                crate::auth::Access::Owner => "For owners.",
+                _ => "For anyone signed in.",
+            });
+        }
         let path = paths
             .entry(format!("{PREFIX}{}", route.path))
             .or_insert_with(|| json!({}));
@@ -316,6 +604,7 @@ pub fn reference(routes: &[Route]) -> Value {
         "paths": paths,
         "components": {
             "headers": {"RequestId": {"description": "Identifies this request in logs. Send your own to have it echoed back.", "schema": {"type": "string"}}},
+            "securitySchemes": {"session": {"type": "http", "scheme": "bearer", "description": "The session token: the session cookie in the browser, or `Authorization: Bearer <token>` from an app. Requests that change something must also send `X-Requested-With: ortus`."}},
             "schemas": {
                 "Error": {
                     "type": "object",

@@ -106,6 +106,7 @@ impl App for Notes {
             id: "countNotes",
             tag: "notes",
             summary: "Count the notes.",
+            access: ortus_core::auth::Access::Signed,
             response: count_schema,
             handler: count,
         }]
@@ -163,9 +164,26 @@ fn json_of(text: &str) -> Value {
     serde_json::from_str(text).unwrap_or_else(|e| panic!("not JSON ({e}): {text}"))
 }
 
+fn token(instance: &Arc<Instance>) -> String {
+    use std::sync::atomic::AtomicU32;
+    static N: AtomicU32 = AtomicU32::new(0);
+    ortus_core::instance::testing_auth::signed_in(
+        instance,
+        &format!("t{}@test.example", N.fetch_add(1, Ordering::SeqCst)),
+        ortus_core::auth::accounts::Role::Member,
+    )
+}
+
 fn listed(instance: &Arc<Instance>) -> Vec<String> {
     let client = TestClient::new(ortus_core::app(Arc::clone(instance)));
-    let body = json_of(client.get("/api/v1/apps").send().body_text());
+    let token = token(instance);
+    let body = json_of(
+        client
+            .get("/api/v1/apps")
+            .header("Authorization", &format!("Bearer {token}"))
+            .send()
+            .body_text(),
+    );
     body["apps"]
         .as_array()
         .unwrap()
@@ -194,7 +212,12 @@ fn installed_apps_are_listed_in_switcher_order() {
 fn an_app_answers_its_routes_and_screens() {
     let instance = testing::instance(apps());
     let client = TestClient::new(ortus_core::app(Arc::clone(&instance)));
-    let response = client.get("/api/v1/notes/count").send();
+    let auth = format!("Bearer {}", token(&instance));
+    assert_eq!(401, client.get("/api/v1/notes/count").send().status());
+    let response = client
+        .get("/api/v1/notes/count")
+        .header("Authorization", &auth)
+        .send();
     assert_eq!(200, response.status(), "{}", response.body_text());
     assert_eq!(json!({"count": 0}), json_of(response.body_text()));
     for screen in [
@@ -225,7 +248,11 @@ fn a_switched_off_app_is_gone_but_keeps_its_data() {
     assert_eq!(vec!["chat:communicate:/chat"], listed(&instance));
 
     let client = TestClient::new(ortus_core::app(Arc::clone(&instance)));
-    let response = client.get("/api/v1/notes/count").send();
+    let auth = format!("Bearer {}", token(&instance));
+    let response = client
+        .get("/api/v1/notes/count")
+        .header("Authorization", &auth)
+        .send();
     assert_eq!(404, response.status());
     let body = json_of(response.body_text());
     assert_eq!("not_installed", body["error"]["code"]);
@@ -236,7 +263,10 @@ fn a_switched_off_app_is_gone_but_keeps_its_data() {
     ));
 
     block_on(instance.switches.set("notes", true, 2)).unwrap();
-    let response = client.get("/api/v1/notes/count").send();
+    let response = client
+        .get("/api/v1/notes/count")
+        .header("Authorization", &auth)
+        .send();
     assert_eq!(json!({"count": 1}), json_of(response.body_text()));
 }
 

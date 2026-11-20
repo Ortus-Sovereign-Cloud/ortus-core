@@ -28,7 +28,15 @@ pub const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self'
 /// Paths of the web client that are screens, not files: each answers
 /// with the page, and the client shows the screen for the path. Every app
 /// adds its own path and everything under it.
-pub const SCREENS: &[&str] = &["/", "/welcome", "/apps", "/settings", "/admin"];
+pub const SCREENS: &[&str] = &[
+    "/",
+    "/setup",
+    "/sign-in",
+    "/welcome",
+    "/apps",
+    "/settings",
+    "/admin",
+];
 
 fn mime(path: &str) -> &'static str {
     match path.rsplit('.').next().unwrap_or_default() {

@@ -8,6 +8,7 @@
 //!                          keep only the newest N (default 7) there
 //! ortus check-backup <dir> check a backup without restoring it
 //! ortus restore <dir>      restore a backup into an empty installation
+//! ortus setup-link         a new link to create the first owner
 //! ortus version            print the version
 //! ```
 //!
@@ -36,6 +37,7 @@ const HELP: &str =
                       write it to <dir>/<UTC time> and keep the newest N there (default 7)
   check-backup <dir>  check that a backup is whole and that this program can restore it
   restore <dir>       restore a backup into an empty database and file store
+  setup-link          print a new link to create the first owner (until there is one)
   version             print the version
 
 Settings come from ORTUS_CONFIG (or ./ortus.toml) and ORTUS_* variables.";
@@ -106,6 +108,18 @@ pub async fn run(name: &str, version: &str, apps: Vec<Arc<dyn App>>, args: &[Str
                 "ortus: restored {dir} (taken by Ortus {}); start the program to finish any upgrade",
                 checked.manifest.ortus_version
             );
+            Ok(())
+        })
+        .await,
+        ["setup-link"] => with_config(|config| async move {
+            let instance = crate::instance::Instance::open(config, apps, now_ms()).await?;
+            match crate::auth::setup::prepare(&instance, instance.config.setup_token.as_deref(), true, now_ms())
+                .await
+                .map_err(|e| e.to_string())?
+            {
+                Some(link) => println!("ortus: create the first owner at {link}"),
+                None => println!("ortus: this installation already has its owner"),
+            }
             Ok(())
         })
         .await,

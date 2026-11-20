@@ -193,7 +193,7 @@ fn the_database_and_other_files_beside_the_program_are_not_served() {
     }
     let page = get(program.port, "/").unwrap();
     assert!(
-        page.starts_with("HTTP/1.1 200") && page.contains("<ortus-shell>"),
+        page.starts_with("HTTP/1.1 200") && page.contains("<ortus-root>"),
         "the web client is served"
     );
 }

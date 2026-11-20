@@ -18,7 +18,7 @@ fn the_page_is_served_and_always_revalidated() {
         .starts_with("text/html"));
     assert_eq!(Some("no-cache"), response.header("Cache-Control"));
     let page = response.body_text();
-    assert!(page.contains("<ortus-shell>"), "{page}");
+    assert!(page.contains("<ortus-root>"), "{page}");
     assert!(
         page.contains("lang=\"en\"") && page.contains("dir=\"ltr\""),
         "the page starts in English, left to right"
@@ -111,9 +111,9 @@ fn the_api_and_the_probe_still_answer_beside_the_client() {
     // Ready only once a server runs; the test client has none, but the
     // probe must reach rws rather than be refused as an unknown path.
     assert!(client.get("/readyz").send().body_text().contains("ready"));
-    let apps = client.get("/api/v1/apps").send();
-    assert_eq!(200, apps.status());
-    assert_eq!("{\"apps\":[]}", apps.body_text());
+    let health = client.get("/api/v1/health").send();
+    assert_eq!(200, health.status());
+    assert!(health.body_text().contains("\"status\":\"ok\""));
 }
 
 #[test]

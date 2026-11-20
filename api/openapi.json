@@ -39,6 +39,13 @@
         ],
         "type": "object"
       }
+    },
+    "securitySchemes": {
+      "session": {
+        "description": "The session token: the session cookie in the browser, or `Authorization: Bearer <token>` from an app. Requests that change something must also send `X-Requested-With: ortus`.",
+        "scheme": "bearer",
+        "type": "http"
+      }
     }
   },
   "info": {
@@ -54,6 +61,7 @@
   "paths": {
     "/api/v1/apps": {
       "get": {
+        "description": "For anyone signed in.",
         "operationId": "listApps",
         "responses": {
           "200": {
@@ -118,6 +126,11 @@
             "description": "Any error, in the common error format."
           }
         },
+        "security": [
+          {
+            "session": []
+          }
+        ],
         "summary": "List the apps that are installed and switched on.",
         "tags": [
           "core"
@@ -173,6 +186,278 @@
         "summary": "Report that the server is up, and its version.",
         "tags": [
           "core"
+        ]
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "description": "For anyone signed in.",
+        "operationId": "getMe",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "chooser_seen": {
+                      "description": "Whether the person has seen the app chooser once.",
+                      "type": "boolean"
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "expires_at": {
+                      "description": "When a demo account is deleted, in Unix milliseconds.",
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "language": {
+                      "description": "The language chosen in personal settings.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "last_app": {
+                      "description": "The app opened last; the client opens it after sign-in.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "enum": [
+                        "member",
+                        "admin",
+                        "owner"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "email",
+                    "name",
+                    "role",
+                    "chooser_seen"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "The signed-in person's account.",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/api/v1/session/sign-out": {
+      "post": {
+        "operationId": "signOut",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "signed_out": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "signed_out"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "summary": "End this session and remove its cookie.",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/api/v1/setup": {
+      "get": {
+        "operationId": "getSetup",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "needed": {
+                      "description": "Whether the installation still needs its first owner.",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "needed"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "summary": "Whether the installation still needs its first owner.",
+        "tags": [
+          "accounts"
+        ]
+      },
+      "post": {
+        "operationId": "createOwner",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "chooser_seen": {
+                      "description": "Whether the person has seen the app chooser once.",
+                      "type": "boolean"
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "expires_at": {
+                      "description": "When a demo account is deleted, in Unix milliseconds.",
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "language": {
+                      "description": "The language chosen in personal settings.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "last_app": {
+                      "description": "The app opened last; the client opens it after sign-in.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "enum": [
+                        "member",
+                        "admin",
+                        "owner"
+                      ],
+                      "type": "string"
+                    },
+                    "session_token": {
+                      "description": "The session token. Browsers get it as a cookie too; apps send it as `Authorization: Bearer`.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "email",
+                    "name",
+                    "role",
+                    "chooser_seen",
+                    "session_token"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "summary": "Create the first owner with the token from the setup link, and sign in as them.",
+        "tags": [
+          "accounts"
         ]
       }
     }

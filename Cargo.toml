@@ -30,3 +30,5 @@ opendal-http-transport-reqwest = { version = "0.59.5", default-features = false 
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
 webpki-roots = "1"
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
+getrandom = "0.3"
+base64 = "0.22"

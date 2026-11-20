@@ -119,3 +119,41 @@ pub mod testing {
         Instance::assemble(config, store, files, apps)
     }
 }
+
+/// A signed-in person for tests.
+pub mod testing_auth {
+    use std::sync::Arc;
+
+    use super::Instance;
+    use crate::auth::accounts::{self, NewUser, Role, State};
+    use crate::auth::sessions::{self, Lifetime};
+    use crate::runtime::block_on;
+
+    /// Creates an active account with `role` and returns a session token
+    /// for it.
+    pub fn signed_in(instance: &Arc<Instance>, email: &str, role: Role) -> String {
+        let store = instance.store.as_ref();
+        let user = block_on(accounts::create(
+            store,
+            &NewUser {
+                email,
+                name: email,
+                role,
+                state: State::Active,
+                expires_at: None,
+            },
+            0,
+        ))
+        .expect("a new account");
+        block_on(sessions::start(
+            store,
+            &user.id,
+            "test",
+            "",
+            "",
+            Lifetime::default(),
+            crate::program::now_ms(),
+        ))
+        .expect("a session")
+    }
+}
