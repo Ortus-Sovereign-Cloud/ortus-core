@@ -214,11 +214,85 @@ const PLACES: &[(&str, &str, &str, bool)] = &[
     ("core_credentials", "id", "data", true),
 ];
 
+/// Where an app keeps sealed values: a text column, whole (no `fields`),
+/// or a JSON document whose named string fields are each sealed.
+#[derive(Clone, Copy, Debug)]
+pub struct Place {
+    pub table: &'static str,
+    pub id: &'static str,
+    pub column: &'static str,
+    pub fields: &'static [&'static str],
+}
+
 /// Seals every plain secret, and re-seals what an older key sealed, with
 /// the current key. Answers how many values changed.
 pub async fn seal_all(store: &dyn AsyncStore, keys: &Keyring) -> Result<u64, String> {
+    seal_all_with(store, keys, &[]).await
+}
+
+/// [`seal_all`], and the places apps keep sealed values in.
+pub async fn seal_all_with(
+    store: &dyn AsyncStore,
+    keys: &Keyring,
+    places: &[Place],
+) -> Result<u64, String> {
     let mut changed = 0;
     let mut tx = store.begin().await.map_err(|e| e.to_string())?;
+    for place in places {
+        // Names come from the apps' code, never from input.
+        let rows = tx
+            .query(
+                &format!(
+                    "SELECT {}, {} FROM {} WHERE {} IS NOT NULL",
+                    place.id, place.column, place.table, place.column
+                ),
+                &[],
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            let (Some(id), Some(text)) = (
+                row.text(0).map(str::to_string),
+                row.text(1).map(str::to_string),
+            ) else {
+                continue;
+            };
+            let new = if place.fields.is_empty() {
+                if keys.is_current(text.as_bytes()) {
+                    continue;
+                }
+                keys.seal(&keys.open(text.as_bytes())?)
+            } else {
+                let mut doc: serde_json::Value =
+                    serde_json::from_str(&text).map_err(|e| format!("{}: {e}", place.table))?;
+                let mut touched = false;
+                for field in place.fields {
+                    let Some(value) = doc[*field].as_str().map(str::to_string) else {
+                        continue;
+                    };
+                    if keys.is_current(value.as_bytes()) {
+                        continue;
+                    }
+                    doc[*field] = keys.seal(&keys.open(value.as_bytes())?).into();
+                    touched = true;
+                }
+                if !touched {
+                    continue;
+                }
+                doc.to_string()
+            };
+            tx.execute(
+                &format!(
+                    "UPDATE {} SET {} = $1 WHERE {} = $2",
+                    place.table, place.column, place.id
+                ),
+                &[new.into(), id.as_str().into()],
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+            changed += 1;
+        }
+    }
     for (table, id_column, column, json) in PLACES {
         let filter = if *json {
             " WHERE kind IN ('totp', 'totp-pending')"

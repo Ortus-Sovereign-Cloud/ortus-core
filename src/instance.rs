@@ -46,7 +46,8 @@ impl Instance {
             std::env::var("ORTUS_SECRETS_KEY").ok(),
         )?;
         crate::secrets::check(store.as_ref(), &keys).await?;
-        crate::secrets::seal_all(store.as_ref(), &keys).await?;
+        let places: Vec<crate::secrets::Place> = apps.iter().flat_map(|a| a.sealed()).collect();
+        crate::secrets::seal_all_with(store.as_ref(), &keys, &places).await?;
         Ok(Self::assemble(config, store, files, apps, keys))
     }
 

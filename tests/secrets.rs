@@ -57,11 +57,59 @@ fn sealing(store: Arc<dyn AsyncStore>) {
 
     // Rotated by the environment ("new,old"): everything, the check value
     // too, is re-sealed, so the old key can then be dropped.
+    // An app's sealed values (a whole column, and fields of a JSON
+    // document) are sealed and re-sealed with the rest.
+    run("CREATE TABLE app_things (id TEXT PRIMARY KEY, secret TEXT, doc TEXT)");
+    run("INSERT INTO app_things (id, secret, doc) VALUES ('t1', 'app-password', '{\"rsa\":\"key-one\",\"other\":\"left alone\"}')");
+    run("INSERT INTO app_things (id, secret, doc) VALUES ('t2', NULL, NULL)");
+    const PLACES: &[secrets::Place] = &[
+        secrets::Place {
+            table: "app_things",
+            id: "id",
+            column: "secret",
+            fields: &[],
+        },
+        secrets::Place {
+            table: "app_things",
+            id: "id",
+            column: "doc",
+            fields: &["rsa"],
+        },
+    ];
+    assert_eq!(
+        2,
+        block_on(secrets::seal_all_with(s, &keys, PLACES)).unwrap()
+    );
+    assert_eq!(
+        0,
+        block_on(secrets::seal_all_with(s, &keys, PLACES)).unwrap()
+    );
+    let doc: serde_json::Value =
+        serde_json::from_str(&one("SELECT doc FROM app_things WHERE id = 't1'")).unwrap();
+    assert_eq!("left alone", doc["other"]);
+    assert_eq!(
+        "key-one",
+        keys.open_text(doc["rsa"].as_str().unwrap()).unwrap()
+    );
+
     let new = secrets::new_key();
     let both = Keyring::from_keys(&[new.clone(), base64_of_test_key()], Custody::Fixed).unwrap();
-    block_on(secrets::seal_all(s, &both)).unwrap();
+    block_on(secrets::seal_all_with(s, &both, PLACES)).unwrap();
     let only_new = Keyring::from_keys(&[new], Custody::Fixed).unwrap();
     block_on(secrets::check(s, &only_new)).unwrap();
+    assert_eq!(
+        "app-password",
+        only_new
+            .open_text(&one("SELECT secret FROM app_things WHERE id = 't1'"))
+            .unwrap(),
+        "re-sealed under the new key"
+    );
+    let doc: serde_json::Value =
+        serde_json::from_str(&one("SELECT doc FROM app_things WHERE id = 't1'")).unwrap();
+    assert_eq!(
+        "key-one",
+        only_new.open_text(doc["rsa"].as_str().unwrap()).unwrap()
+    );
 
     // A process still holding only the old key cannot read the new seals:
     // its code check refuses, rather than treating the secret as empty.

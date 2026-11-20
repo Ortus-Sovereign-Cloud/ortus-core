@@ -165,7 +165,8 @@ pub async fn run(name: &str, version: &str, apps: Vec<Arc<dyn App>>, args: &[Str
                 }
                 _ => return Err("no secrets key to rotate".into()),
             };
-            let changed = crate::secrets::seal_all(store.as_ref(), &keys).await?;
+            let places: Vec<crate::secrets::Place> = apps.iter().flat_map(|a| a.sealed()).collect();
+            let changed = crate::secrets::seal_all_with(store.as_ref(), &keys, &places).await?;
             crate::auth::policy::set_setting(store.as_ref(), "secrets_check", &keys.seal_text("ortus")).await.map_err(|e| e.to_string())?;
             crate::auth::policy::set_setting(store.as_ref(), "keys_rotated_at", &now_ms().to_string()).await.map_err(|e| e.to_string())?;
             println!("ortus: secrets sealed under key {}: {changed} values re-sealed; restart the program", keys.current_id());

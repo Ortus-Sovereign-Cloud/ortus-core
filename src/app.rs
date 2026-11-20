@@ -128,6 +128,11 @@ pub trait App: Send + Sync + 'static {
 
     /// Jobs to run on a schedule: (kind, every so many milliseconds, at
     /// least a minute). The kind must be one of [`App::jobs`].
+    /// Where the app keeps sealed values, so a key rotation re-seals them.
+    fn sealed(&self) -> Vec<crate::secrets::Place> {
+        Vec::new()
+    }
+
     fn periodic(&self) -> Vec<(&'static str, i64)> {
         Vec::new()
     }
