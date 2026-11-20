@@ -517,6 +517,214 @@
         ]
       }
     },
+    "/api/v1/admin/policy": {
+      "get": {
+        "description": "For administrators and owners.",
+        "operationId": "getPolicy",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "The classification labels (by rank, with their rules), the default label and the partner organisations.",
+        "tags": [
+          "policy"
+        ]
+      }
+    },
+    "/api/v1/admin/policy/labels/:id": {
+      "delete": {
+        "description": "For owners.",
+        "operationId": "deleteLabel",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Remove a label; what kept it is judged by the strictest label from then on.",
+        "tags": [
+          "policy"
+        ]
+      },
+      "put": {
+        "description": "For owners.",
+        "operationId": "putLabel",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Add or change a label: {name, rank, rules: {outside, partners, links, forwarding (allow, warn or deny), phones, watermark}}.",
+        "tags": [
+          "policy"
+        ]
+      }
+    },
+    "/api/v1/admin/policy/partners": {
+      "post": {
+        "description": "For owners.",
+        "operationId": "addPartner",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Allow a partner organisation: {domain, name, channels: [mail, chat, files, calls]}.",
+        "tags": [
+          "policy"
+        ]
+      }
+    },
+    "/api/v1/admin/policy/partners/:domain": {
+      "delete": {
+        "description": "For owners.",
+        "operationId": "removePartner",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Remove a partner organisation.",
+        "tags": [
+          "policy"
+        ]
+      }
+    },
     "/api/v1/admin/sign-in": {
       "get": {
         "description": "For administrators and owners.",
@@ -1991,6 +2199,48 @@
         "summary": "Mark a first-day step done: policies or team.",
         "tags": [
           "me"
+        ]
+      }
+    },
+    "/api/v1/policy/check": {
+      "post": {
+        "description": "For anyone signed in.",
+        "operationId": "checkPolicy",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Ask what the policy would answer: {action (share, link, forward, open_on_phone), label, to (an address, a domain, anyone, or absent for people here), channel, reason}. Records nothing.",
+        "tags": [
+          "policy"
         ]
       }
     },

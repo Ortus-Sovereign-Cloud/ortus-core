@@ -20,6 +20,7 @@ pub mod interfaces;
 pub mod jobs;
 pub mod mail_out;
 pub mod oidc;
+pub mod policy;
 pub mod program;
 pub mod runtime;
 pub mod services;
@@ -49,6 +50,7 @@ pub fn schemas() -> Vec<storage::Schema> {
         auth::directory::SCHEMA,
         auth::policy::SCHEMA,
         auth::personal::SCHEMA,
+        policy::SCHEMA,
         audit::SCHEMA,
         oidc::SCHEMA,
         auth::external::SCHEMA,
