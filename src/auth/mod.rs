@@ -127,6 +127,42 @@ pub async fn audit(ortus: &Instance, event: crate::audit::Event<'_>) {
     }
 }
 
+/// The address of the person making a request. Behind a trusted reverse
+/// proxy it is the last address in X-Forwarded-For that is not itself a
+/// trusted proxy; otherwise the connection's own address. A client cannot
+/// pretend to be somewhere else by sending the header itself.
+pub fn client_address(
+    request: &Request,
+    connection: &rust_web_server::server::ConnectionInfo,
+    trusted: &[String],
+) -> String {
+    let peer = connection
+        .client
+        .ip
+        .trim_start_matches("::ffff:")
+        .to_string();
+    if !trusted.contains(&peer) {
+        return peer;
+    }
+    let forwarded: Vec<String> = request
+        .headers
+        .iter()
+        .filter(|h| h.name.eq_ignore_ascii_case("x-forwarded-for"))
+        .flat_map(|h| {
+            h.value
+                .split(',')
+                .map(|a| a.trim().trim_start_matches("::ffff:").to_string())
+                .collect::<Vec<_>>()
+        })
+        .filter(|a| !a.is_empty())
+        .collect();
+    forwarded
+        .into_iter()
+        .rev()
+        .find(|a| !trusted.iter().any(|t| t == a))
+        .unwrap_or(peer)
+}
+
 /// The signed-in session of a request, if any.
 pub async fn current(request: &Request, ortus: &Arc<Instance>) -> Option<Session> {
     let token = token(request)?;

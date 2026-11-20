@@ -206,7 +206,10 @@ async fn sign_in(
 ) -> Result<Response, ApiError> {
     let input: PasskeyAnswer = body(request)?;
     let store = ortus.store.as_ref();
-    let keys = vec![format!("ip:{}", connection.client.ip)];
+    let keys = vec![format!(
+        "ip:{}",
+        super::client_address(request, connection, &ortus.config.trusted_proxies)
+    )];
     for key in &keys {
         if limits::blocked_until(store, key, now_ms()).await?.is_some() {
             return Err(ApiError::too_many("Too many tries. Try again later."));
@@ -263,7 +266,11 @@ async fn sign_in(
                 ortus,
                 crate::audit::Event::new("auth.sign_in", crate::audit::Outcome::Failed)
                     .by(&user_id)
-                    .from(&connection.client.ip)
+                    .from(&crate::auth::client_address(
+                        request,
+                        connection,
+                        &ortus.config.trusted_proxies,
+                    ))
                     .with(json!({"method": "passkey", "reason": reason})),
             )
             .await;

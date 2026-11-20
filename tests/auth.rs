@@ -359,3 +359,57 @@ fn credentials_and_limits_on_postgres() {
         credentials_and_limits((fresh.open)());
     }
 }
+
+#[test]
+fn the_client_address_comes_from_a_trusted_proxy_only() {
+    use ortus_core::auth::client_address;
+    use rust_web_server::server::{Address, ConnectionInfo};
+    let request = |xff: Option<&str>| {
+        let mut text = "GET / HTTP/1.1\r\nHost: x\r\n".to_string();
+        if let Some(xff) = xff {
+            text.push_str(&format!("X-Forwarded-For: {xff}\r\n"));
+        }
+        text.push_str("\r\n");
+        rust_web_server::request::Request::parse(text.as_bytes()).unwrap()
+    };
+    let from = |ip: &str| {
+        ConnectionInfo::new(
+            Address {
+                ip: ip.into(),
+                port: 1,
+            },
+            Address {
+                ip: "127.0.0.1".into(),
+                port: 2,
+            },
+        )
+    };
+    let trusted = vec!["127.0.0.1".to_string()];
+    // Through the trusted proxy: the address it saw.
+    assert_eq!(
+        "203.0.113.7",
+        client_address(&request(Some("203.0.113.7")), &from("127.0.0.1"), &trusted)
+    );
+    // A forged entry the client sent itself comes before the real one.
+    assert_eq!(
+        "203.0.113.7",
+        client_address(
+            &request(Some("10.9.9.9, 203.0.113.7")),
+            &from("127.0.0.1"),
+            &trusted
+        )
+    );
+    // Straight from the internet, the header is ignored.
+    assert_eq!(
+        "198.51.100.2",
+        client_address(&request(Some("10.9.9.9")), &from("198.51.100.2"), &trusted)
+    );
+    assert_eq!(
+        "127.0.0.1",
+        client_address(&request(None), &from("127.0.0.1"), &trusted)
+    );
+    assert_eq!(
+        "127.0.0.1",
+        client_address(&request(Some("1.2.3.4")), &from("127.0.0.1"), &[])
+    );
+}

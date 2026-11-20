@@ -109,7 +109,7 @@ async fn sign_up(
     }
     let store = ortus.store.as_ref();
     let now = now_ms();
-    let address = connection.client.ip.clone();
+    let address = crate::auth::client_address(request, connection, &ortus.config.trusted_proxies);
     if count_since(store, now - DAY_MS, None).await? >= i64::from(config.signup.accounts_per_day) {
         return Err(ApiError {
             status: 429,
@@ -263,7 +263,11 @@ async fn verify(
         crate::audit::Event::new("auth.sign_up", crate::audit::Outcome::Done)
             .by(&user_id)
             .on(&user_id)
-            .from(&connection.client.ip),
+            .from(&crate::auth::client_address(
+                request,
+                connection,
+                &ortus.config.trusted_proxies,
+            )),
     )
     .await;
     let user = accounts::by_id(store, &user_id)

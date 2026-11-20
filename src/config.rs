@@ -12,6 +12,7 @@
 //! ip = "0.0.0.0"
 //! port = 7878
 //! public_url = "https://ortus.example.org"   # where people reach it
+//! trusted_proxies = ["127.0.0.1"]            # reverse proxies whose X-Forwarded-For counts
 //!
 //! [database]                   # omit for SQLite in data_dir
 //! url = "postgres://ortus:secret@db/ortus"
@@ -50,7 +51,7 @@
 //! | `ORTUS_CONFIG` | path of the TOML file (default `ortus.toml`, if present) |
 //! | `ORTUS_ROLES` | `roles`, comma separated |
 //! | `ORTUS_DATA_DIR` | `data_dir` |
-//! | `ORTUS_WEB_IP`, `ORTUS_WEB_PORT`, `ORTUS_PUBLIC_URL` | `[web]` |
+//! | `ORTUS_WEB_IP`, `ORTUS_WEB_PORT`, `ORTUS_PUBLIC_URL`, `ORTUS_TRUSTED_PROXIES` | `[web]` |
 //! | `ORTUS_DATABASE_URL`, `ORTUS_DATABASE_MAX_CONNECTIONS` | `[database]` |
 //! | `ORTUS_APPS_OFF` | `[apps] off`, comma separated |
 //! | `ORTUS_SETUP_TOKEN` | the first-start token (environment only) |
@@ -129,6 +130,9 @@ pub struct Config {
     /// The address people reach this installation at, without a trailing
     /// slash: in links, cookies, passkeys and sign-in with other services.
     pub public_url: String,
+    /// Addresses of reverse proxies in front of the program, whose
+    /// X-Forwarded-For header is believed.
+    pub trusted_proxies: Vec<String>,
     pub database: Database,
     pub files: FileStore,
     /// Apps that are off until an administrator turns them on.
@@ -297,6 +301,7 @@ struct WebSection {
     ip: Option<String>,
     port: Option<u16>,
     public_url: Option<String>,
+    trusted_proxies: Option<Vec<String>>,
 }
 
 #[derive(Default, Deserialize)]
@@ -551,6 +556,14 @@ impl Config {
         let website = flag("ORTUS_SITE_WEBSITE", env("ORTUS_SITE_WEBSITE"))?
             .or(file.site.website)
             .unwrap_or(false);
+        let trusted_proxies = match env("ORTUS_TRUSTED_PROXIES") {
+            Some(list) => list
+                .split(',')
+                .map(|a| a.trim().to_string())
+                .filter(|a| !a.is_empty())
+                .collect(),
+            None => file.web.trusted_proxies.clone().unwrap_or_default(),
+        };
         let apps_off = match env("ORTUS_APPS_OFF") {
             Some(list) => list
                 .split(',')
@@ -565,6 +578,7 @@ impl Config {
             web_ip,
             web_port,
             public_url,
+            trusted_proxies,
             database,
             files,
             apps_off,

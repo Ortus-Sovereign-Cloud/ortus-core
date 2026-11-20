@@ -109,7 +109,10 @@ async fn password_sign_in(
 ) -> Result<Response, ApiError> {
     let input: PasswordBody = body(request)?;
     let store = ortus.store.as_ref();
-    let keys = limits::keys(&input.email, &connection.client.ip);
+    let keys = limits::keys(
+        &input.email,
+        &crate::auth::client_address(request, connection, &ortus.config.trusted_proxies),
+    );
     check_limits(store, &keys).await?;
     let user = usable(store, &input.email).await?;
     let matches = match &user {
@@ -126,7 +129,11 @@ async fn password_sign_in(
         super::audit(
             ortus,
             crate::audit::Event::new("auth.sign_in", crate::audit::Outcome::Failed)
-                .from(&connection.client.ip)
+                .from(&crate::auth::client_address(
+                    request,
+                    connection,
+                    &ortus.config.trusted_proxies,
+                ))
                 .with(json!({"method": "password", "email": input.email.trim().to_lowercase()})),
         )
         .await;
@@ -170,7 +177,10 @@ async fn code_sign_in(
     else {
         return Err(wrong());
     };
-    let keys = limits::keys(&user.email, &connection.client.ip);
+    let keys = limits::keys(
+        &user.email,
+        &crate::auth::client_address(request, connection, &ortus.config.trusted_proxies),
+    );
     check_limits(store, &keys).await?;
     if !credentials::check_totp(store, &user.id, &input.code, now_ms()).await? {
         limits::failed(store, &keys, now_ms()).await?;
@@ -178,7 +188,11 @@ async fn code_sign_in(
             ortus,
             crate::audit::Event::new("auth.sign_in", crate::audit::Outcome::Failed)
                 .by(&user.id)
-                .from(&connection.client.ip)
+                .from(&crate::auth::client_address(
+                    request,
+                    connection,
+                    &ortus.config.trusted_proxies,
+                ))
                 .with(json!({"method": "totp"})),
         )
         .await;
@@ -209,7 +223,10 @@ async fn recovery_sign_in(
 ) -> Result<Response, ApiError> {
     let input: RecoveryBody = body(request)?;
     let store = ortus.store.as_ref();
-    let keys = limits::keys(&input.email, &connection.client.ip);
+    let keys = limits::keys(
+        &input.email,
+        &crate::auth::client_address(request, connection, &ortus.config.trusted_proxies),
+    );
     check_limits(store, &keys).await?;
     let user = usable(store, &input.email).await?;
     let left = match &user {
@@ -223,7 +240,11 @@ async fn recovery_sign_in(
         super::audit(
             ortus,
             crate::audit::Event::new("auth.sign_in", crate::audit::Outcome::Failed)
-                .from(&connection.client.ip)
+                .from(&crate::auth::client_address(
+                    request,
+                    connection,
+                    &ortus.config.trusted_proxies,
+                ))
                 .with(json!({"method": "recovery", "email": input.email.trim().to_lowercase()})),
         )
         .await;

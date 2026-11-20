@@ -451,7 +451,7 @@ pub async fn signed_in_with(
         ortus.store.as_ref(),
         &user.id,
         methods,
-        &connection.client.ip,
+        &crate::auth::client_address(request, connection, &ortus.config.trusted_proxies),
         &agent,
         lifetime,
         crate::program::now_ms(),
@@ -463,7 +463,11 @@ pub async fn signed_in_with(
                 ortus,
                 crate::audit::Event::new("auth.sign_in", crate::audit::Outcome::Done)
                     .by(&user.id)
-                    .from(&connection.client.ip)
+                    .from(&crate::auth::client_address(
+                        request,
+                        connection,
+                        &ortus.config.trusted_proxies,
+                    ))
                     .with(json!({ "methods": methods })),
             )
             .await;
@@ -514,7 +518,11 @@ fn setup(
                     crate::audit::Event::new("auth.owner_created", crate::audit::Outcome::Done)
                         .by(&user.id)
                         .on(&user.id)
-                        .from(&connection.client.ip),
+                        .from(&crate::auth::client_address(
+                            &request,
+                            &connection,
+                            &ortus.config.trusted_proxies,
+                        )),
                 )
                 .await;
                 signed_in(&request, &connection, &ortus, &user, "setup").await
@@ -526,7 +534,11 @@ fn setup(
                 crate::auth::audit(
                     &ortus,
                     crate::audit::Event::new("auth.owner_created", crate::audit::Outcome::Failed)
-                        .from(&connection.client.ip)
+                        .from(&crate::auth::client_address(
+                            &request,
+                            &connection,
+                            &ortus.config.trusted_proxies,
+                        ))
                         .with(json!({"reason": "bad setup token"})),
                 )
                 .await;
