@@ -281,3 +281,182 @@ fn people_on_postgres() {
         people((fresh.open)());
     }
 }
+
+/// The slice review's findings on administering people, on both engines.
+fn people_guards(store: Arc<dyn AsyncStore>) {
+    let instance = testing_store::instance(store, Vec::new());
+    let client = TestClient::new(ortus_core::app(Arc::clone(&instance)));
+    let owner = signed_in(&instance, "taras@ministry.example", Role::Owner);
+    let admin = signed_in(&instance, "marek@ministry.example", Role::Admin);
+    let id_of = |email: &str| {
+        block_on(ortus_core::auth::accounts::by_email(
+            instance.store.as_ref(),
+            email,
+        ))
+        .unwrap()
+        .unwrap()
+        .id
+    };
+    let (taras, marek) = (
+        id_of("taras@ministry.example"),
+        id_of("marek@ministry.example"),
+    );
+
+    // Without outgoing mail, the invitation answers its link.
+    let invited = json_of(&send(
+        &client,
+        "POST",
+        "/api/v1/admin/users",
+        &admin,
+        &json!({"email": "iryna@ministry.example", "name": "Iryna"}).to_string(),
+    ));
+    assert!(
+        invited["link"]
+            .as_str()
+            .unwrap()
+            .contains("/welcome/accept#"),
+        "{invited}"
+    );
+    let iryna = invited["id"].as_str().unwrap().to_string();
+
+    // Suspended and back again, someone never signed in stays invited.
+    for state in ["suspended", "active"] {
+        assert_eq!(
+            200,
+            send(
+                &client,
+                "PATCH",
+                &format!("/api/v1/admin/users/{iryna}"),
+                &admin,
+                &json!({"state": state}).to_string()
+            )
+            .status()
+        );
+    }
+    assert_eq!(
+        "invited",
+        json_of(&send(
+            &client,
+            "GET",
+            "/api/v1/admin/users?q=iryna",
+            &admin,
+            ""
+        ))["users"][0]["state"]
+    );
+    assert_eq!(
+        400,
+        send(
+            &client,
+            "PATCH",
+            &format!("/api/v1/admin/users/{iryna}"),
+            &admin,
+            &json!({"state": "active"}).to_string()
+        )
+        .status(),
+        "invited is not made active by hand"
+    );
+
+    // A refused change changes nothing, and says why.
+    let raise = send(
+        &client,
+        "PATCH",
+        &format!("/api/v1/admin/users/{marek}"),
+        &admin,
+        &json!({"name": "Boss", "role": "owner"}).to_string(),
+    );
+    assert_eq!(403, raise.status());
+    assert_eq!(
+        "marek@ministry.example",
+        json_of(&send(
+            &client,
+            "GET",
+            "/api/v1/admin/users?q=marek",
+            &admin,
+            ""
+        ))["users"][0]["name"]
+    );
+
+    // An admin does not see an owner's devices.
+    assert_eq!(
+        403,
+        send(
+            &client,
+            "GET",
+            &format!("/api/v1/admin/users/{taras}/devices"),
+            &admin,
+            ""
+        )
+        .status()
+    );
+    assert_eq!(
+        200,
+        send(
+            &client,
+            "GET",
+            &format!("/api/v1/admin/users/{taras}/devices"),
+            &owner,
+            ""
+        )
+        .status()
+    );
+
+    // The only owner cannot reset their own sign-in.
+    let reset = send(
+        &client,
+        "POST",
+        &format!("/api/v1/admin/users/{taras}/reset"),
+        &owner,
+        "",
+    );
+    assert_eq!(
+        (409, "last_owner"),
+        (
+            reset.status(),
+            json_of(&reset)["error"]["code"].as_str().unwrap()
+        )
+    );
+    // A reset answers the link (no mail here) and removes outside sign-in links.
+    block_on(instance.store.execute(
+        "INSERT INTO core_external_providers (id, name, issuer, client_id, client_secret, scopes, link_by_email, create_accounts, created_at) VALUES ('eid', 'eID', 'https://idp.example', 'c', NULL, 'openid', 0, 0, 1)",
+        &[],
+    ))
+    .unwrap();
+    block_on(instance.store.execute(
+        "INSERT INTO core_external_links (provider, subject, user_id, created_at) VALUES ('eid', 'marek-at-eid', $1, 1)",
+        &[marek.as_str().into()],
+    ))
+    .unwrap();
+    let reset = json_of(&send(
+        &client,
+        "POST",
+        &format!("/api/v1/admin/users/{marek}/reset"),
+        &owner,
+        "",
+    ));
+    assert!(
+        reset["link"].as_str().unwrap().contains("/welcome/accept#"),
+        "{reset}"
+    );
+    let links = block_on(
+        instance
+            .store
+            .query("SELECT COUNT(*) FROM core_external_links", &[]),
+    )
+    .unwrap()[0]
+        .int(0)
+        .unwrap();
+    assert_eq!(0, links, "the outside provider no longer signs Marek in");
+}
+
+#[test]
+fn people_guards_on_sqlite() {
+    let fresh = common::sqlite().unwrap();
+    people_guards((fresh.open)());
+}
+
+#[test]
+fn people_guards_on_postgres() {
+    if let Some(fresh) = common::postgres() {
+        people_guards((fresh.open)());
+    }
+}

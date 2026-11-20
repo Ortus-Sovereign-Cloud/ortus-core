@@ -83,6 +83,17 @@ pub(super) const MIGRATIONS: &[Migration] = &[
     CREATE INDEX core_signups_when ON core_signups (created_at);
     ALTER TABLE core_users ADD COLUMN quota_bytes BIGINT",
     },
+    Migration {
+        version: 5,
+        name: "sign-up mails sent",
+        sql: "CREATE TABLE core_signup_mails (
+        email TEXT NOT NULL,
+        address TEXT NOT NULL,
+        sent_at BIGINT NOT NULL
+    );
+    CREATE INDEX core_signup_mails_email ON core_signup_mails (email, sent_at);
+    CREATE INDEX core_signup_mails_address ON core_signup_mails (address, sent_at)",
+    },
 ];
 
 /// What a person may do in the installation as a whole.

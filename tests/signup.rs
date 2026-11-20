@@ -52,7 +52,14 @@ fn demo(smtp: &str, per_address: u32) -> Arc<Instance> {
             .map(|(_, v)| v.clone())
     })
     .unwrap();
-    testing::instance_with(config, Vec::new())
+    let instance = testing::instance_with(config, Vec::new());
+    // Sign-up opens only once the installation has its owner.
+    ortus_core::instance::testing_auth::signed_in(
+        &instance,
+        "owner@ortus.test",
+        ortus_core::auth::accounts::Role::Owner,
+    );
+    instance
 }
 
 fn post<A: Application>(client: &TestClient<A>, path: &str, body: &Value) -> TestResponse {
@@ -268,4 +275,68 @@ fn sign_up_is_capped_per_network_address_and_closed_by_default() {
         false,
         json_of(&client.get("/api/v1/site").send())["signup_open"]
     );
+}
+
+#[test]
+fn nobody_signs_up_before_the_first_owner() {
+    let Some((smtp, _)) = mail_server() else {
+        return;
+    };
+    let instance = demo(&smtp, 5);
+    block_on(
+        instance
+            .store
+            .execute("UPDATE core_users SET role = 'member'", &[]),
+    )
+    .unwrap();
+    let client = TestClient::new(ortus_core::app(Arc::clone(&instance)));
+    let early = post(
+        &client,
+        "/api/v1/signup",
+        &json!({"email": "early@example.org", "name": "E", "accept_terms": true}),
+    );
+    assert_eq!(404, early.status(), "{}", early.body_text());
+}
+
+#[test]
+fn resends_are_capped_and_a_suspended_sign_up_stays_suspended() {
+    let Some((smtp, api)) = mail_server() else {
+        return;
+    };
+    let instance = demo(&smtp, 50);
+    let client = TestClient::new(ortus_core::app(Arc::clone(&instance)));
+    let email = format!("resend-{}@example.org", now_ms());
+    let body = json!({"email": email, "name": "R", "accept_terms": true});
+    let mut ticket = String::new();
+    for _ in 0..5 {
+        let answer = post(&client, "/api/v1/signup", &body);
+        assert_eq!(200, answer.status(), "{}", answer.body_text());
+        ticket = json_of(&answer)["ticket"].as_str().unwrap().to_string();
+    }
+    assert_eq!(
+        429,
+        post(&client, "/api/v1/signup", &body).status(),
+        "the sixth mail to one address is refused"
+    );
+
+    // An administrator suspends the sign-up before its code is entered.
+    send_queued(&instance);
+    let (_, text) = last_mail(&api, &email);
+    block_on(instance.store.execute(
+        "UPDATE core_users SET state = 'suspended' WHERE email = $1",
+        &[email.as_str().into()],
+    ))
+    .unwrap();
+    let verify = post(
+        &client,
+        "/api/v1/signup/verify",
+        &json!({"ticket": ticket, "code": code_in(&text)}),
+    );
+    assert_eq!(401, verify.status(), "{}", verify.body_text());
+    let state = block_on(instance.store.query(
+        "SELECT state FROM core_users WHERE email = $1",
+        &[email.as_str().into()],
+    ))
+    .unwrap();
+    assert_eq!(Some("suspended"), state[0].text(0));
 }

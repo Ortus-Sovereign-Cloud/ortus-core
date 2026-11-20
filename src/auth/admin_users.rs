@@ -197,12 +197,14 @@ async fn me_admin(request: &Request, ortus: &Arc<Instance>) -> Result<User, ApiE
 }
 
 /// Makes an invitation link for `user` and mails it.
+/// Answers the link itself when this installation sends no mail, so the
+/// administrator can pass it on.
 async fn send_invite(
     ortus: &Instance,
     user: &User,
     inviter: &str,
     language: Option<&str>,
-) -> StoreResult<()> {
+) -> StoreResult<Option<String>> {
     let token = super::random_token();
     let store = ortus.store.as_ref();
     store
@@ -234,8 +236,9 @@ async fn send_invite(
             now_ms(),
         )
         .await?;
+        return Ok(None);
     }
-    Ok(())
+    Ok(Some(link))
 }
 
 #[derive(Deserialize)]
@@ -247,7 +250,11 @@ struct Invite {
     language: Option<String>,
 }
 
-async fn invite_one(ortus: &Instance, me: &User, input: &Invite) -> Result<User, ApiError> {
+async fn invite_one(
+    ortus: &Instance,
+    me: &User,
+    input: &Invite,
+) -> Result<(User, Option<String>), ApiError> {
     let role = Role::parse(input.role.as_deref().unwrap_or("member"))
         .ok_or_else(|| ApiError::bad_request("The role is member, admin or owner."))?;
     if role > me.role {
@@ -281,7 +288,7 @@ async fn invite_one(ortus: &Instance, me: &User, input: &Invite) -> Result<User,
     for group in input.groups.iter().flatten() {
         join_group(store, group, &user.id).await?;
     }
-    send_invite(ortus, &user, &me.name, input.language.as_deref()).await?;
+    let link = send_invite(ortus, &user, &me.name, input.language.as_deref()).await?;
     super::audit(
         ortus,
         crate::audit::Event::new("people.invited", crate::audit::Outcome::Done)
@@ -290,7 +297,7 @@ async fn invite_one(ortus: &Instance, me: &User, input: &Invite) -> Result<User,
             .with(json!({"role": role.name()})),
     )
     .await;
-    Ok(user)
+    Ok((user, link))
 }
 
 /// Adds the person to the group named `name`, making the group if needed.
@@ -325,8 +332,12 @@ pub async fn join_group(store: &dyn AsyncStore, name: &str, user_id: &str) -> St
 async fn invite(request: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiError> {
     let me = me_admin(request, ortus).await?;
     let input: Invite = body(request)?;
-    let user = invite_one(ortus, &me, &input).await?;
-    Ok(ok(&row(ortus.store.as_ref(), &user).await?))
+    let (user, link) = invite_one(ortus, &me, &input).await?;
+    let mut answer = row(ortus.store.as_ref(), &user).await?;
+    if let Some(link) = link {
+        answer["link"] = json!(link);
+    }
+    Ok(ok(&answer))
 }
 
 /// One person per line: `email,name[,role[,group;group]]`. A header line
@@ -355,7 +366,7 @@ async fn import(request: &Request, ortus: &Arc<Instance>) -> Result<Response, Ap
             language: None,
         };
         match invite_one(ortus, &me, &input).await {
-            Ok(user) => added.push(user.email),
+            Ok((user, _)) => added.push(user.email),
             Err(e) => failed.push(json!({"line": number + 1, "reason": e.message})),
         }
     }
@@ -388,35 +399,65 @@ async fn change(
         return Err(ApiError::forbidden());
     }
     let input: Change = body(request)?;
+    // Everything is checked before anything is written.
+    let role = match input.role.as_deref() {
+        None => None,
+        Some(role) => {
+            let role = Role::parse(role)
+                .ok_or_else(|| ApiError::bad_request("The role is member, admin or owner."))?;
+            if role > me.role {
+                return Err(ApiError::forbidden());
+            }
+            if user.role == Role::Owner && role != Role::Owner && owners(store).await? <= 1 {
+                return Err(ApiError {
+                    status: 409,
+                    code: "last_owner",
+                    message: "An installation keeps at least one owner.".into(),
+                });
+            }
+            Some(role)
+        }
+    };
+    let state = match input.state.as_deref() {
+        None => None,
+        Some("suspended") => {
+            if id == me.id {
+                return Err(ApiError::bad_request("You cannot suspend yourself."));
+            }
+            Some(State::Suspended)
+        }
+        // Back from a suspension: someone who never set up a way to sign
+        // in is invited again (their invitation must still be accepted).
+        Some("active") if user.state == State::Suspended => {
+            Some(if has_sign_in(store, &id).await? {
+                State::Active
+            } else {
+                State::Invited
+            })
+        }
+        Some("active") if user.state == State::Active => Some(State::Active),
+        Some(_) => {
+            return Err(ApiError::bad_request(
+                "The state is suspended or active (from suspended).",
+            ))
+        }
+    };
     if let Some(name) = input.name.as_deref().filter(|n| !n.trim().is_empty()) {
         accounts::set(store, &id, Field::Name(name)).await?;
     }
-    if let Some(role) = input.role.as_deref() {
-        let role = Role::parse(role)
-            .ok_or_else(|| ApiError::bad_request("The role is member, admin or owner."))?;
-        if role > me.role
-            || (user.role == Role::Owner && role != Role::Owner && owners(store).await? <= 1)
-        {
-            return Err(ApiError {
-                status: 409,
-                code: "last_owner",
-                message: "An installation keeps at least one owner.".into(),
-            });
-        }
+    if let Some(role) = role {
         accounts::set(store, &id, Field::Role(role)).await?;
     }
-    if let Some(state) = input.state.as_deref() {
-        let state = match state {
-            "suspended" => State::Suspended,
-            "active" if matches!(user.state, State::Suspended | State::Active) => State::Active,
-            _ => return Err(ApiError::bad_request("The state is suspended or active.")),
-        };
-        if id == me.id && state == State::Suspended {
-            return Err(ApiError::bad_request("You cannot suspend yourself."));
-        }
+    if let Some(state) = state {
         accounts::set(store, &id, Field::State(state)).await?;
         if state == State::Suspended {
             sessions::end_all(store, &id).await?;
+            store
+                .execute(
+                    "DELETE FROM core_oidc_tokens WHERE user_id = $1",
+                    &[id.as_str().into()],
+                )
+                .await?;
         }
     }
     if input.clear_quota || input.quota_bytes.is_some() {
@@ -448,6 +489,17 @@ async fn change(
     Ok(ok(&row(store, &user).await?))
 }
 
+/// Whether the person has any way to sign in of their own.
+async fn has_sign_in(store: &dyn AsyncStore, id: &str) -> StoreResult<bool> {
+    let rows = store
+        .query(
+            "SELECT (SELECT COUNT(*) FROM core_credentials WHERE user_id = $1) + (SELECT COUNT(*) FROM core_external_links WHERE user_id = $1)",
+            &[id.into()],
+        )
+        .await?;
+    Ok(rows.first().and_then(|r| r.int(0)).unwrap_or(0) > 0)
+}
+
 async fn owners(store: &dyn AsyncStore) -> StoreResult<i64> {
     let rows = store
         .query(
@@ -474,15 +526,24 @@ async fn reset(
     if user.role > me.role {
         return Err(ApiError::forbidden());
     }
+    if user.role == Role::Owner && user.state == State::Active && owners(store).await? <= 1 {
+        return Err(ApiError {
+            status: 409,
+            code: "last_owner",
+            message: "An installation keeps at least one owner who can sign in.".into(),
+        });
+    }
     sessions::end_all(store, &id).await?;
-    store
-        .execute(
-            "DELETE FROM core_credentials WHERE user_id = $1",
-            &[id.as_str().into()],
-        )
-        .await?;
+    // Every way they signed in goes, outside providers too.
+    for sql in [
+        "DELETE FROM core_credentials WHERE user_id = $1",
+        "DELETE FROM core_external_links WHERE user_id = $1",
+        "DELETE FROM core_oidc_tokens WHERE user_id = $1",
+    ] {
+        store.execute(sql, &[id.as_str().into()]).await?;
+    }
     accounts::set(store, &id, Field::State(State::Invited)).await?;
-    send_invite(ortus, &user, &me.name, user.language.as_deref()).await?;
+    let link = send_invite(ortus, &user, &me.name, user.language.as_deref()).await?;
     super::audit(
         ortus,
         crate::audit::Event::new("people.sign_in_reset", crate::audit::Outcome::Done)
@@ -490,7 +551,7 @@ async fn reset(
             .on(&id),
     )
     .await;
-    Ok(ok(&json!({ "reset": id })))
+    Ok(ok(&json!({ "reset": id, "link": link })))
 }
 
 async fn devices(
@@ -500,7 +561,12 @@ async fn devices(
 ) -> Result<Response, ApiError> {
     let me = me_admin(request, ortus).await?;
     let id = params.get("id").unwrap_or_default().to_string();
-    let _ = me;
+    let user = accounts::by_id(ortus.store.as_ref(), &id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("There is no such person."))?;
+    if user.role > me.role {
+        return Err(ApiError::forbidden());
+    }
     let list = sessions::list(ortus.store.as_ref(), &id).await?;
     let devices: Vec<Value> = list.iter().map(|s| json!({"agent": s.agent, "address": s.address, "methods": s.methods, "last_seen_at": s.last_seen_at, "created_at": s.created_at})).collect();
     Ok(ok(&json!({ "devices": devices })))

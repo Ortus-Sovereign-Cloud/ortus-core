@@ -163,6 +163,28 @@ fn an_application_signs_a_person_in_with_ortus() {
             .send()
             .status()
     );
+    // A suspended account's token answers nothing more.
+    ortus_core::runtime::block_on(instance.store.execute(
+        "UPDATE core_users SET state = 'suspended' WHERE email = 'taras@ministry.example'",
+        &[],
+    ))
+    .unwrap();
+    assert_eq!(
+        401,
+        client
+            .get("/oauth2/userinfo")
+            .header(
+                "Authorization",
+                &format!("Bearer {}", tokens["access_token"].as_str().unwrap())
+            )
+            .send()
+            .status()
+    );
+    ortus_core::runtime::block_on(instance.store.execute(
+        "UPDATE core_users SET state = 'active' WHERE email = 'taras@ministry.example'",
+        &[],
+    ))
+    .unwrap();
 
     // A wrong verifier, an unregistered return address.
     let again = client

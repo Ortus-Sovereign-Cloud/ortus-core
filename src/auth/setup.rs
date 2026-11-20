@@ -30,9 +30,13 @@ fn hash(token: &str) -> String {
     hex::encode(Sha256::digest(token.as_bytes()))
 }
 
-/// Whether the installation still needs its first owner.
+/// Whether the installation still needs its first owner. Other accounts
+/// (an early sign-up) do not count: only an owner ends setup.
 pub async fn needed(store: &dyn AsyncStore) -> StoreResult<bool> {
-    Ok(accounts::count(store).await? == 0)
+    let rows = store
+        .query("SELECT COUNT(*) FROM core_users WHERE role = 'owner'", &[])
+        .await?;
+    Ok(rows.first().and_then(|r| r.int(0)).unwrap_or_default() == 0)
 }
 
 /// Makes the setup token when the installation has no account and no
@@ -99,7 +103,7 @@ pub async fn create_owner(
     let store_error = |e: crate::storage::StoreError| SetupError::Store(e.to_string());
     let mut tx = store.begin().await.map_err(store_error)?;
     let users = tx
-        .query("SELECT COUNT(*) FROM core_users", &[])
+        .query("SELECT COUNT(*) FROM core_users WHERE role = 'owner'", &[])
         .await
         .map_err(store_error)?;
     if users.first().and_then(|r| r.int(0)).unwrap_or_default() > 0 {

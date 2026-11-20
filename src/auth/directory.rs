@@ -138,14 +138,29 @@ async fn save(request: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiE
         .ok_or_else(ApiError::sign_in)?;
     let input: Settings = body(request)?;
     let previous = stored(ortus).await?;
+    let (url, bind_dn) = (
+        input.url.trim().to_string(),
+        input.bind_dn.trim().to_string(),
+    );
+    // The kept password goes only to the server and account it was given for.
+    let kept = previous
+        .filter(|p| p.url == url && p.bind_dn == bind_dn)
+        .map(|p| p.password);
+    let password = input
+        .password
+        .filter(|p| !p.is_empty())
+        .or(kept)
+        .unwrap_or_default();
+    if password.is_empty() || bind_dn.is_empty() {
+        // An empty password is an anonymous bind, which many servers accept.
+        return Err(ApiError::bad_request(
+            "Give the account and password to read the directory with.",
+        ));
+    }
     let settings = Stored {
-        url: input.url.trim().to_string(),
-        bind_dn: input.bind_dn.trim().to_string(),
-        password: input
-            .password
-            .filter(|p| !p.is_empty())
-            .or(previous.map(|p| p.password))
-            .unwrap_or_default(),
+        url,
+        bind_dn,
+        password,
         base_dn: input.base_dn.trim().to_string(),
         user_filter: input
             .user_filter
@@ -251,7 +266,8 @@ async fn sync(request: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiE
         let name = name.unwrap_or_else(|| mail.clone());
         let user = match accounts::by_email(store, &mail).await? {
             Some(user) => {
-                if user.name != name {
+                // An administrator's sync does not rename owners (they could not by hand).
+                if user.name != name && (user.role <= me.user.role) {
                     accounts::set(store, &user.id, Field::Name(&name)).await?;
                     updated += 1;
                 }

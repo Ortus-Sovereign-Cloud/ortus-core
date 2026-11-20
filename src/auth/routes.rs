@@ -147,7 +147,9 @@ async fn password_sign_in(
         return Err(wrong());
     };
     if credentials::has_totp(store, &user.id).await? {
-        // The limits are cleared only once the whole sign-in succeeds.
+        // The limits are cleared only once the whole sign-in succeeds; a
+        // right password gives back its own try, no more.
+        limits::refund(store, &keys).await?;
         let ticket = new_ticket(store, &user.id, "password").await?;
         return Ok(ok(&json!({ "next": "code", "ticket": ticket })));
     }

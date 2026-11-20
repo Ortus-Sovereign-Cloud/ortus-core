@@ -4,6 +4,7 @@ import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { LocalizeController } from "@lit-material/core/localize.js";
 import { ApiError, homeFor, signInProviders, site, type Provider, signInWithCode, signInWithPassword, signInWithRecoveryCode, type Me } from "../api.js";
 import { t } from "../i18n.js";
+import { safeReturn } from "../safe-return.js";
 import type { MessageKey } from "../locales/en.js";
 import { passkeysAvailable, signInWithPasskey } from "../passkeys.js";
 import { MARK, controls, page } from "../ui.js";
@@ -97,7 +98,7 @@ export class OrtusSignIn extends LitElement {
     // Back to where sign-in was asked for (an application signing in with
     // Ortus), but only to a path on this site.
     const back = new URLSearchParams(location.search).get("return");
-    location.assign(back && back.startsWith("/") && !back.startsWith("//") && !back.startsWith("/\\") ? back : homeFor(me));
+    location.assign(back && safeReturn(back) ? back : homeFor(me));
   }
 
   private async submit(event: SubmitEvent): Promise<void> {

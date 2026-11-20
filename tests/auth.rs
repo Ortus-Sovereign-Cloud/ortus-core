@@ -327,23 +327,42 @@ fn credentials_and_limits(store: Arc<dyn AsyncStore>) {
     );
     assert_eq!(2, block_on(credentials::all(s, &user.id)).unwrap().len());
 
+    // Five tries are free; the fifth starts a 30 s block; success clears.
     let keys = limits::keys("marek@ministry.example", "10.1.1.1");
-    for _ in 0..4 {
-        block_on(limits::failed(s, &keys, 100)).unwrap();
+    for _ in 0..5 {
+        assert_eq!(
+            None,
+            block_on(limits::blocked_until(s, &keys[0], 100)).unwrap()
+        );
     }
     assert_eq!(
-        None,
-        block_on(limits::blocked_until(s, &keys[0], 100)).unwrap()
-    );
-    block_on(limits::failed(s, &keys, 100)).unwrap();
-    assert_eq!(
         Some(30_100),
-        block_on(limits::blocked_until(s, &keys[1], 100)).unwrap()
+        block_on(limits::blocked_until(s, &keys[0], 100)).unwrap()
     );
     block_on(limits::succeeded(s, &keys)).unwrap();
     assert_eq!(
         None,
         block_on(limits::blocked_until(s, &keys[0], 100)).unwrap()
+    );
+
+    // Tries made at the same moment still count one by one.
+    let burst = limits::keys("olena@ministry.example", "10.1.1.2");
+    let taken: Vec<bool> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..20)
+            .map(|_| {
+                scope.spawn(|| {
+                    block_on(limits::blocked_until(s, &burst[0], 100))
+                        .unwrap()
+                        .is_none()
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    assert_eq!(
+        5,
+        taken.iter().filter(|t| **t).count(),
+        "only five of twenty parallel tries go through"
     );
 }
 

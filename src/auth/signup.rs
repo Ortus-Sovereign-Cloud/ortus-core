@@ -43,6 +43,11 @@ fn closed() -> ApiError {
     ApiError::not_found("Sign-up is not open on this installation.")
 }
 
+/// Sign-up mails (codes and "already signed up" notices) per address a day.
+const MAILS_PER_EMAIL: i64 = 5;
+/// Sign-up mails sent for requests from one network a day.
+const MAILS_PER_ADDRESS: i64 = 30;
+
 async fn count_since(
     store: &dyn AsyncStore,
     since: i64,
@@ -86,6 +91,10 @@ async fn sign_up(
     if !config.signup.open {
         return Err(closed());
     }
+    // Nobody signs up before the first owner exists: setup comes first.
+    if super::setup::needed(ortus.store.as_ref()).await? {
+        return Err(closed());
+    }
     let input: SignUp = body(request)?;
     if !input.accept_terms {
         return Err(ApiError {
@@ -126,6 +135,34 @@ async fn sign_up(
             message: "Too many new accounts from this network today.".into(),
         });
     }
+    // Every mail sent counts, new account or not: resends would otherwise
+    // flood the address and give fresh guesses at the code without end.
+    let sent = |column: &'static str, value: String| async move {
+        store
+            .query(
+                &format!(
+                    "SELECT COUNT(*) FROM core_signup_mails WHERE {column} = $1 AND sent_at >= $2"
+                ),
+                &[value.into(), (now - DAY_MS).into()],
+            )
+            .await
+            .map(|rows| rows.first().and_then(|r| r.int(0)).unwrap_or_default())
+    };
+    if sent("email", email.clone()).await? >= MAILS_PER_EMAIL
+        || sent("address", address.clone()).await? >= MAILS_PER_ADDRESS
+    {
+        return Err(ApiError {
+            status: 429,
+            code: "signup_address_full",
+            message: "Too many sign-up mails today. Try again tomorrow.".into(),
+        });
+    }
+    store
+        .execute(
+            "INSERT INTO core_signup_mails (email, address, sent_at) VALUES ($1, $2, $3)",
+            &[email.as_str().into(), address.as_str().into(), now.into()],
+        )
+        .await?;
     let language = mail_text::language(input.language.as_deref());
     let ticket = super::random_token();
     match accounts::by_email(store, &email).await? {
@@ -225,14 +262,16 @@ async fn verify(
         message: "That code does not match, or it has expired.".into(),
     };
     let ticket = hash(&input.ticket);
-    let rows = store
-        .query("SELECT user_id, code_hash, attempts, expires_at FROM core_email_checks WHERE ticket_hash = $1", &[ticket.as_str().into()])
+    let now = now_ms();
+    // Count the try before comparing, in one statement, so parallel
+    // guesses cannot share one try.
+    let counted = store
+        .execute(
+            "UPDATE core_email_checks SET attempts = attempts + 1 WHERE ticket_hash = $1 AND attempts < $2 AND expires_at > $3",
+            &[ticket.as_str().into(), CODE_TRIES.into(), now.into()],
+        )
         .await?;
-    let Some(row) = rows.first() else {
-        return Err(wrong());
-    };
-    let user_id = row.text(0).unwrap_or_default().to_string();
-    if row.int(3).unwrap_or_default() < now_ms() || row.int(2).unwrap_or_default() >= CODE_TRIES {
+    if counted != 1 {
         store
             .execute(
                 "DELETE FROM core_email_checks WHERE ticket_hash = $1",
@@ -241,23 +280,38 @@ async fn verify(
             .await?;
         return Err(wrong());
     }
-    let code: String = input.code.chars().filter(char::is_ascii_digit).collect();
-    if hash(&code) != row.text(1).unwrap_or_default() {
-        store
-            .execute(
-                "UPDATE core_email_checks SET attempts = attempts + 1 WHERE ticket_hash = $1",
-                &[ticket.as_str().into()],
-            )
-            .await?;
-        return Err(wrong());
-    }
-    store
-        .execute(
-            "DELETE FROM core_email_checks WHERE ticket_hash = $1",
+    let rows = store
+        .query(
+            "SELECT user_id, code_hash FROM core_email_checks WHERE ticket_hash = $1",
             &[ticket.as_str().into()],
         )
         .await?;
-    accounts::set(store, &user_id, accounts::Field::State(State::Active)).await?;
+    let Some(row) = rows.first() else {
+        return Err(wrong());
+    };
+    let user_id = row.text(0).unwrap_or_default().to_string();
+    let code: String = input.code.chars().filter(char::is_ascii_digit).collect();
+    if hash(&code) != row.text(1).unwrap_or_default() {
+        return Err(wrong());
+    }
+    // Only a sign-up still waiting for its check becomes active (not one
+    // an administrator suspended meanwhile).
+    let mut tx = store.begin().await?;
+    tx.execute(
+        "DELETE FROM core_email_checks WHERE ticket_hash = $1",
+        &[ticket.as_str().into()],
+    )
+    .await?;
+    let activated = tx
+        .execute(
+            "UPDATE core_users SET state = 'active' WHERE id = $1 AND state = 'unverified'",
+            &[user_id.as_str().into()],
+        )
+        .await?;
+    tx.commit().await?;
+    if activated != 1 {
+        return Err(wrong());
+    }
     super::audit(
         ortus,
         crate::audit::Event::new("auth.sign_up", crate::audit::Outcome::Done)
@@ -298,6 +352,22 @@ async fn site(_: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiError> 
 /// Deletes accounts whose time is up (and sign-ups never verified within
 /// a day), with all their data, a batch at a time.
 async fn expire(tx: &mut dyn AsyncTx, ortus: &Instance, now: i64) -> Result<(), String> {
+    // Counting rows are needed for a day only; dead tokens not at all.
+    for (sql, before) in [
+        (
+            "DELETE FROM core_signup_mails WHERE sent_at < $1",
+            now - DAY_MS,
+        ),
+        (
+            "DELETE FROM core_signups WHERE created_at < $1",
+            now - 2 * DAY_MS,
+        ),
+        ("DELETE FROM core_oidc_tokens WHERE expires_at < $1", now),
+    ] {
+        tx.execute(sql, &[before.into()])
+            .await
+            .map_err(|e| e.to_string())?;
+    }
     let rows = tx
         .query(
             "SELECT id FROM core_users WHERE (expires_at IS NOT NULL AND expires_at <= $1) OR (state = 'unverified' AND created_at <= $2) ORDER BY id LIMIT 100",
@@ -320,6 +390,9 @@ async fn expire(tx: &mut dyn AsyncTx, ortus: &Instance, now: i64) -> Result<(), 
             "DELETE FROM core_invites WHERE user_id = $1",
             "DELETE FROM core_external_links WHERE user_id = $1",
             "DELETE FROM core_preferences WHERE user_id = $1",
+            "DELETE FROM core_oidc_codes WHERE user_id = $1",
+            "DELETE FROM core_oidc_tokens WHERE user_id = $1",
+            "DELETE FROM core_signups WHERE user_id = $1",
             "DELETE FROM core_users WHERE id = $1",
         ] {
             tx.execute(sql, &[id.as_str().into()])

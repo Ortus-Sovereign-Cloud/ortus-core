@@ -384,6 +384,9 @@ fn userinfo(
         else {
             return unauthorized();
         };
+        if user.state != accounts::State::Active {
+            return unauthorized();
+        }
         let scope = row.text(1).unwrap_or_default();
         let mut info = json!({ "sub": user.id });
         if scope.split(' ').any(|s| s == "email") {
@@ -427,10 +430,7 @@ async fn add_client(request: &Request, ortus: &Arc<Instance>) -> Result<Response
         ));
     }
     for uri in &input.redirect_uris {
-        let ok = uri.starts_with("https://")
-            || uri.starts_with("http://localhost")
-            || uri.starts_with("http://127.0.0.1")
-            || (uri.contains(":/") && !uri.starts_with("http"));
+        let ok = crate::form::redirect_uri_ok(uri);
         if !ok || uri.contains('#') {
             return Err(ApiError::bad_request(format!("{uri} is not a return address Ortus accepts: https, a local address, or an app's own scheme, without #.")));
         }

@@ -224,7 +224,7 @@ fn start(
             return failed("unreachable");
         };
         let return_to = form::query(&request.request_uri, "return")
-            .filter(|r| r.starts_with('/') && !r.starts_with("//") && !r.starts_with("/\\"))
+            .and_then(|r| form::safe_return(&r))
             .unwrap_or_else(|| "/".into());
         let (state, nonce, verifier, binding) = (
             super::random_token(),
@@ -373,7 +373,9 @@ async fn account_for(
     let user = match email {
         Some(email) if provider.link_by_email => accounts::by_email(store, email)
             .await
-            .map_err(|_| "server")?,
+            .map_err(|_| "server")?
+            // Never an unverified sign-up: its owner has not proved the address.
+            .filter(|u| matches!(u.state, accounts::State::Active | accounts::State::Invited)),
         _ => None,
     };
     let user = match (user, email) {
@@ -588,9 +590,7 @@ async fn add(request: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiEr
             "The id is lowercase letters, digits and dashes.",
         ));
     }
-    let local = input.issuer.starts_with("http://localhost")
-        || input.issuer.starts_with("http://127.0.0.1");
-    if !(input.issuer.starts_with("https://") || local) {
+    if !crate::form::web_address_ok(&input.issuer) {
         return Err(ApiError::bad_request(
             "The issuer must be an https address.",
         ));
