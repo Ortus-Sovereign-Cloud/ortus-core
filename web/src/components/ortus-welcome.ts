@@ -191,8 +191,14 @@ export class OrtusWelcome extends LitElement {
     switch (id) {
       case "secure":
         return html`<a class="button primary" href="/settings/security">${t(this.localize, "welcome.secure.action")}</a>`;
-      case "policies":
-        return html`<a class="button primary" href="/terms" target="_blank" @click=${() => this.finish("policies")}>${t(this.localize, "welcome.policies.action")}</a>`;
+      case "policies": {
+        // With the records app, the organisation's must-read policies
+        // (confirmed one by one there); without it, the terms.
+        const records = this.apps.find((a) => a.id === "records");
+        return records
+          ? html`<a class="button primary" href="/records?read=1">${t(this.localize, "welcome.policies.action")}</a>`
+          : html`<a class="button primary" href="/terms" target="_blank" @click=${() => this.finish("policies")}>${t(this.localize, "welcome.policies.action")}</a>`;
+      }
       case "team": {
         const chat = this.apps.find((a) => a.id === "chat");
         return chat
