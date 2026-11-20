@@ -201,6 +201,9 @@ fn a_second_start_on_the_same_data_finds_everything_in_place() {
     }
     let running = serve(&data, "all");
     assert!(get(running.port, "/api/v1/health").contains("\"status\":\"ok\""));
+    // The probes Kubernetes uses.
+    assert!(get(running.port, "/readyz").starts_with("HTTP/1.1 200"));
+    assert!(get(running.port, "/livez").starts_with("HTTP/1.1 200"));
 }
 
 #[test]

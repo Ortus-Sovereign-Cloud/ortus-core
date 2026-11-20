@@ -103,7 +103,12 @@ fn files_that_do_not_exist_are_not_found() {
 #[test]
 fn the_api_and_the_probe_still_answer_beside_the_client() {
     let client = client();
-    assert_eq!(200, client.get("/healthz").send().status());
+    for probe in ["/healthz", "/livez"] {
+        assert_eq!(200, client.get(probe).send().status(), "{probe}");
+    }
+    // Ready only once a server runs; the test client has none, but the
+    // probe must reach rws rather than be refused as an unknown path.
+    assert!(client.get("/readyz").send().body_text().contains("ready"));
     let apps = client.get("/api/v1/apps").send();
     assert_eq!(200, apps.status());
     assert_eq!("{\"apps\":[]}", apps.body_text());
@@ -148,6 +153,8 @@ fn only_ortus_paths_are_let_through() {
         "/",
         "/?lang=pl",
         "/healthz",
+        "/livez",
+        "/readyz",
         "/favicon.svg",
         "/assets/index-abc.js",
         "/api/v1/health",

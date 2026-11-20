@@ -93,6 +93,10 @@ pub fn register(mut app: AppWithState<()>) -> AppWithState<()> {
     app.get("/assets/*path", asset).get("/favicon.svg", favicon)
 }
 
+/// The health probes rws answers: liveness (`/healthz`, `/livez`) and
+/// readiness (`/readyz`, which fails while the program shuts down).
+pub const PROBES: &[&str] = &["/healthz", "/livez", "/readyz"];
+
 /// Lets through only the paths Ortus serves, and refuses the rest.
 ///
 /// rws serves any file under the program's working directory when no
@@ -113,7 +117,7 @@ pub fn is_served(uri: &str) -> bool {
         return false;
     }
     SCREENS.contains(&path)
-        || path == "/healthz"
+        || PROBES.contains(&path)
         || path == "/favicon.svg"
         || path.starts_with("/assets/")
         || path == crate::api::PREFIX

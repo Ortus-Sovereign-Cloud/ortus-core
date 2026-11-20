@@ -31,7 +31,7 @@ pub fn schemas() -> Vec<storage::Schema> {
 
 /// The core application: the public API and the web client, with a
 /// request id on every request. Nothing else is served, except the plain
-/// `/healthz` probe that rws provides.
+/// health probes that rws provides (`/healthz`, `/livez`, `/readyz`).
 pub fn app() -> WithMiddleware<AppWithState<()>> {
     web::register(api::register(App::with_state(()), &api::routes()))
         .wrap(RequestIdLayer::new())
