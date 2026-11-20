@@ -18,7 +18,7 @@ pub struct Fresh {
     _dir: Option<tempdir::Dir>,
 }
 
-mod tempdir {
+pub mod tempdir {
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -79,4 +79,40 @@ pub fn postgres() -> Option<Fresh> {
         open: Box::new(move || Arc::new(PostgresStore::connect(&scoped, 4).unwrap())),
         _dir: None,
     })
+}
+
+/// A fresh, empty S3 file store under its own prefix, when S3 is set up.
+pub fn s3_files() -> Option<ortus_core::files::blocking::Files> {
+    static NEXT: AtomicU32 = AtomicU32::new(0);
+    let Ok(endpoint) = std::env::var("ORTUS_TEST_S3_ENDPOINT") else {
+        assert!(
+            std::env::var("ORTUS_REQUIRE_S3").is_err(),
+            "ORTUS_REQUIRE_S3 is set but ORTUS_TEST_S3_ENDPOINT is not"
+        );
+        eprintln!("skipped: set ORTUS_TEST_S3_ENDPOINT to run this test on S3");
+        return None;
+    };
+    let var = |name: &str| std::env::var(name).unwrap_or_else(|_| panic!("{name} is not set"));
+    let settings = ortus_core::files::S3Settings {
+        endpoint,
+        bucket: var("ORTUS_TEST_S3_BUCKET"),
+        region: std::env::var("ORTUS_TEST_S3_REGION").unwrap_or_else(|_| "us-east-1".into()),
+        access_key: var("ORTUS_TEST_S3_ACCESS_KEY"),
+        secret_key: var("ORTUS_TEST_S3_SECRET_KEY"),
+        root: format!(
+            "ortus-core-common-{}-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::SeqCst),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ),
+    };
+    Some(ortus_core::files::blocking::Files::s3(&settings).unwrap())
+}
+
+/// A fresh, empty directory that is removed when dropped.
+pub fn temp_dir() -> tempdir::Dir {
+    tempdir::Dir::new()
 }

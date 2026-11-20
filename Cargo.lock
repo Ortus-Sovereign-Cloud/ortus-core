@@ -1923,12 +1923,14 @@ dependencies = [
 name = "ortus-core"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "opendal",
  "rusqlite",
  "rust-embed",
  "rust-web-server",
  "serde",
  "serde_json",
+ "sha2",
  "tokio",
  "tokio-postgres",
  "toml",

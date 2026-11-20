@@ -20,7 +20,7 @@ mod migrate;
 mod postgres;
 mod sqlite;
 
-pub use migrate::{applied_versions, migrate, Migration};
+pub use migrate::{applied_versions, install, migrate, Migration, Schema};
 pub use postgres::PostgresStore;
 pub use sqlite::SqliteStore;
 
@@ -183,6 +183,11 @@ pub trait AsyncStore: Send + Sync {
 
     /// Starts a transaction.
     fn begin(&self) -> BoxFuture<'_, StoreResult<Box<dyn AsyncTransaction>>>;
+
+    /// Starts a read-only transaction that sees one consistent snapshot of
+    /// the whole database and does not hold up writers in other programs,
+    /// as a backup needs. Writing through it fails.
+    fn begin_read(&self) -> BoxFuture<'_, StoreResult<Box<dyn AsyncTransaction>>>;
 
     /// Runs one statement in its own transaction.
     fn execute<'a>(&'a self, sql: &'a str, params: &'a [Value]) -> BoxFuture<'a, StoreResult<u64>> {

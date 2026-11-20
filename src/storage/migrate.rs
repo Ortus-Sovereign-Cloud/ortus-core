@@ -13,6 +13,29 @@ pub struct Migration {
     pub sql: &'static str,
 }
 
+/// The whole schema of one part of Ortus: its name in the migration
+/// history and every migration it has.
+#[derive(Clone, Copy, Debug)]
+pub struct Schema {
+    pub app: &'static str,
+    pub migrations: &'static [Migration],
+}
+
+impl Schema {
+    /// The newest version this program knows.
+    pub fn latest(&self) -> i64 {
+        self.migrations.len() as i64
+    }
+}
+
+/// Brings every schema in `schemas` up to date, in order.
+pub async fn install(store: &dyn AsyncStore, schemas: &[Schema], now_ms: i64) -> StoreResult<()> {
+    for schema in schemas {
+        migrate(store, schema.app, schema.migrations, now_ms).await?;
+    }
+    Ok(())
+}
+
 const HISTORY_TABLE: &str = "CREATE TABLE IF NOT EXISTS ortus_migrations (
     app TEXT NOT NULL,
     version BIGINT NOT NULL,

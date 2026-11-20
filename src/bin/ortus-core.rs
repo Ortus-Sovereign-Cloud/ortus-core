@@ -1,19 +1,16 @@
-//! Runs the core on its own, for development. The released programs are
-//! built in the `ortus` repository.
-
-use ortus_core::config::Config;
+//! Runs the core on its own, for development and tests. The released
+//! programs are built in the `ortus` repository and use the same command
+//! line.
 
 #[tokio::main]
 async fn main() {
-    let config = match Config::from_process() {
-        Ok(config) => config,
-        Err(e) => {
-            eprintln!("ortus: {e}");
-            std::process::exit(2);
-        }
-    };
-    if let Err(e) = ortus_core::program::run(config).await {
-        eprintln!("ortus: {e}");
-        std::process::exit(1);
-    }
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let status = ortus_core::cli::run(
+        "ortus-core",
+        ortus_core::VERSION,
+        &ortus_core::schemas(),
+        &args,
+    )
+    .await;
+    std::process::exit(status);
 }

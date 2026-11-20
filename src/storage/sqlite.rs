@@ -29,6 +29,7 @@ type Reply<T> = oneshot::Sender<StoreResult<T>>;
 
 enum Command {
     Begin(Reply<()>),
+    BeginRead(Reply<()>),
     Execute(String, Vec<Value>, Reply<u64>),
     Query(String, Vec<Value>, Reply<Vec<Row>>),
     Commit(Reply<()>),
@@ -82,19 +83,37 @@ fn run(connection: &Connection, command: Command) {
         Command::Begin(reply) => {
             drop(reply.send(connection.execute_batch("BEGIN IMMEDIATE").map_err(error)))
         }
+        // A deferred read transaction in WAL mode reads one snapshot and
+        // lets writers in other programs go on.
+        Command::BeginRead(reply) => drop(
+            reply.send(
+                connection
+                    .execute_batch("BEGIN DEFERRED; PRAGMA query_only = ON")
+                    .map_err(error),
+            ),
+        ),
         Command::Execute(sql, params, reply) => {
             drop(reply.send(execute(connection, &sql, &params)))
         }
         Command::Query(sql, params, reply) => drop(reply.send(query(connection, &sql, &params))),
-        Command::Commit(reply) => {
-            drop(reply.send(connection.execute_batch("COMMIT").map_err(error)))
-        }
+        Command::Commit(reply) => drop(
+            reply.send(
+                connection
+                    .execute_batch("COMMIT; PRAGMA query_only = OFF")
+                    .map_err(error),
+            ),
+        ),
         Command::Rollback(reply) => {
             let result = if connection.is_autocommit() {
                 Ok(())
             } else {
                 connection.execute_batch("ROLLBACK").map_err(error)
-            };
+            }
+            .and_then(|()| {
+                connection
+                    .execute_batch("PRAGMA query_only = OFF")
+                    .map_err(error)
+            });
             if let Some(reply) = reply {
                 drop(reply.send(result));
             }
@@ -138,17 +157,28 @@ impl AsyncStore for SqliteStore {
     }
 
     fn begin(&self) -> BoxFuture<'_, StoreResult<Box<dyn AsyncTransaction>>> {
-        Box::pin(async move {
-            let turn = Arc::clone(&self.turn).lock_owned().await;
-            let mut transaction = SqliteTransaction {
-                commands: self.commands.clone(),
-                open: false,
-                _turn: turn,
-            };
-            transaction.ask(Command::Begin).await?;
-            transaction.open = true;
-            Ok(Box::new(transaction) as Box<dyn AsyncTransaction>)
-        })
+        Box::pin(self.start_transaction(Command::Begin))
+    }
+
+    fn begin_read(&self) -> BoxFuture<'_, StoreResult<Box<dyn AsyncTransaction>>> {
+        Box::pin(self.start_transaction(Command::BeginRead))
+    }
+}
+
+impl SqliteStore {
+    async fn start_transaction(
+        &self,
+        begin: fn(Reply<()>) -> Command,
+    ) -> StoreResult<Box<dyn AsyncTransaction>> {
+        let turn = Arc::clone(&self.turn).lock_owned().await;
+        let mut transaction = SqliteTransaction {
+            commands: self.commands.clone(),
+            open: false,
+            _turn: turn,
+        };
+        transaction.ask(begin).await?;
+        transaction.open = true;
+        Ok(Box::new(transaction) as Box<dyn AsyncTransaction>)
     }
 }
 

@@ -61,28 +61,36 @@ impl AsyncStore for PostgresStore {
     }
 
     fn begin(&self) -> BoxFuture<'_, StoreResult<Box<dyn AsyncTransaction>>> {
-        Box::pin(async move {
-            let permit = Arc::clone(&self.pool.permits)
-                .acquire_owned()
-                .await
-                .map_err(|_| StoreError::Database("the connection pool is closed".into()))?;
-            let idle = self
-                .pool
-                .idle
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .pop();
-            let client = match idle {
-                Some(client) if !client.is_closed() => client,
-                _ => open(&self.pool.url).await?,
-            };
-            client.batch_execute("BEGIN").await.map_err(error)?;
-            Ok(Box::new(PostgresTransaction {
-                client: Some(client),
-                pool: Arc::clone(&self.pool),
-                _permit: permit,
-            }) as Box<dyn AsyncTransaction>)
-        })
+        Box::pin(self.start_transaction("BEGIN"))
+    }
+
+    fn begin_read(&self) -> BoxFuture<'_, StoreResult<Box<dyn AsyncTransaction>>> {
+        Box::pin(self.start_transaction("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"))
+    }
+}
+
+impl PostgresStore {
+    async fn start_transaction(&self, begin: &str) -> StoreResult<Box<dyn AsyncTransaction>> {
+        let permit = Arc::clone(&self.pool.permits)
+            .acquire_owned()
+            .await
+            .map_err(|_| StoreError::Database("the connection pool is closed".into()))?;
+        let idle = self
+            .pool
+            .idle
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .pop();
+        let client = match idle {
+            Some(client) if !client.is_closed() => client,
+            _ => open(&self.pool.url).await?,
+        };
+        client.batch_execute(begin).await.map_err(error)?;
+        Ok(Box::new(PostgresTransaction {
+            client: Some(client),
+            pool: Arc::clone(&self.pool),
+            _permit: permit,
+        }) as Box<dyn AsyncTransaction>)
     }
 }
 

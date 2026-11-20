@@ -15,7 +15,8 @@
 use std::collections::HashMap;
 
 use crate::storage::{
-    migrate, AsyncStore, AsyncTransaction, AsyncTx, BoxFuture, Migration, StoreResult, Value,
+    migrate, AsyncStore, AsyncTransaction, AsyncTx, BoxFuture, Migration, Schema, StoreResult,
+    Value,
 };
 
 const MIGRATIONS: &[Migration] = &[Migration {
@@ -37,6 +38,12 @@ const MIGRATIONS: &[Migration] = &[Migration {
     );
     CREATE INDEX ortus_jobs_due ON ortus_jobs (state, run_at)",
 }];
+
+/// The schema of the job table.
+pub const SCHEMA: Schema = Schema {
+    app: "core.jobs",
+    migrations: MIGRATIONS,
+};
 
 /// Creates or upgrades the job table.
 pub async fn install(store: &dyn AsyncStore, now_ms: i64) -> StoreResult<usize> {

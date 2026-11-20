@@ -7,10 +7,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use rust_web_server::prelude::*;
 
 use crate::config::{Config, Role};
-use crate::jobs::{self, Worker};
-use crate::storage::AsyncStore;
+use crate::jobs::Worker;
+use crate::storage::{install, AsyncStore, Schema};
 
-fn now_ms() -> i64 {
+/// The time now, in Unix milliseconds.
+pub fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |since| since.as_millis() as i64)
@@ -22,12 +23,15 @@ fn now_ms() -> i64 {
 /// program then does only what its roles say: the web role serves HTTP,
 /// the worker role runs background jobs. A program without the web role
 /// opens no HTTP listener.
-pub async fn run(config: Config) -> Result<(), String> {
+pub async fn run(config: Config, schemas: &[Schema]) -> Result<(), String> {
+    // Listen for the stop signal before anything else, so a stop that
+    // comes while the program is still starting is not lost.
+    let stop = stop_signal()?;
     let roles: Vec<&str> = config.roles.iter().map(|role| role.name()).collect();
     println!("ortus: roles: {}", roles.join(", "));
 
     let store = config.open_store().await.map_err(|e| e.to_string())?;
-    jobs::install(store.as_ref(), now_ms())
+    install(store.as_ref(), schemas, now_ms())
         .await
         .map_err(|e| e.to_string())?;
     config.open_files().map_err(|e| e.to_string())?;
@@ -53,17 +57,41 @@ pub async fn run(config: Config) -> Result<(), String> {
         std::env::set_var("RWS_CONFIG_IP", &config.web_ip);
         std::env::set_var("RWS_CONFIG_PORT", config.web_port.to_string());
         let (listener, pool) = Server::setup()?;
+        // The listener is bound: tell systemd (Type=notify) we are up.
+        #[cfg(unix)]
+        rust_web_server::systemd::ready("serving");
         Server::run_tls(listener, pool, crate::app()).await;
     } else {
         println!("ortus: no web role: not listening for HTTP");
-        tokio::signal::ctrl_c().await.map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        rust_web_server::systemd::ready("running");
+        stop.await?;
     }
+    println!("ortus: stopping");
 
     stopping.store(true, Ordering::SeqCst);
     if let Some(worker) = worker {
         let _ = worker.await;
     }
     Ok(())
+}
+
+/// Resolves on Ctrl-C or SIGTERM (how systemd and Kubernetes stop a
+/// program). The handlers are in place when this returns.
+fn stop_signal() -> Result<impl std::future::Future<Output = Result<(), String>>, String> {
+    #[cfg(unix)]
+    let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        .map_err(|e| e.to_string())?;
+    let interrupt = tokio::signal::ctrl_c();
+    Ok(async move {
+        #[cfg(unix)]
+        tokio::select! {
+            result = interrupt => result.map_err(|e| e.to_string()),
+            _ = term.recv() => Ok(()),
+        }
+        #[cfg(not(unix))]
+        interrupt.await.map_err(|e| e.to_string())
+    })
 }
 
 async fn run_worker(store: Arc<dyn AsyncStore>, stopping: Arc<AtomicBool>) {

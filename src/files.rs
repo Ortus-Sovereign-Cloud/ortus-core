@@ -224,7 +224,7 @@ pub mod blocking {
 
 /// Refuses keys that could leave the store's root or that the two kinds of
 /// store would treat differently.
-fn check(key: &str) -> FilesResult<&str> {
+pub(crate) fn check(key: &str) -> FilesResult<&str> {
     let bad = |why: &str| Err(FilesError::BadKey(format!("'{key}': {why}")));
     if key.is_empty() {
         return bad("empty");

@@ -5,6 +5,8 @@
 //! answers the health check of the public API.
 
 pub mod api;
+pub mod backup;
+pub mod cli;
 pub mod config;
 pub mod files;
 pub mod jobs;
@@ -20,6 +22,12 @@ use rust_web_server::state::AppWithState;
 
 /// Version of the core, as reported by the health check.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Every database schema of the core, in the order they are installed.
+/// Apps add their own after these.
+pub fn schemas() -> Vec<storage::Schema> {
+    vec![jobs::SCHEMA]
+}
 
 /// The core application: the public API and the web client, with a
 /// request id on every request. Nothing else is served, except the plain
