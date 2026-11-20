@@ -321,6 +321,38 @@ fn labels(store: Arc<dyn AsyncStore>) {
         )
         .status()
     );
+
+    // A deleted label is judged by rules that refuse, not by whichever
+    // label has the highest rank (here an open one).
+    let open_rules = json!({"outside": "allow", "partners": "allow", "links": "allow", "forwarding": "allow", "phones": true, "watermark": false});
+    assert_eq!(
+        200,
+        send(
+            "PUT",
+            "/api/v1/admin/policy/labels/archive",
+            &owner,
+            json!({"name": "ARCHIVE", "rank": 100, "rules": open_rules})
+        )
+        .status()
+    );
+    assert_eq!(
+        200,
+        send(
+            "DELETE",
+            "/api/v1/admin/policy/labels/secret",
+            &owner,
+            Value::Null
+        )
+        .status()
+    );
+    assert_eq!(
+        403,
+        share(Some("secret"), "anyone", Some("please")).status()
+    );
+    assert_eq!(
+        403,
+        share(Some("secret"), "resident@mail.example", Some("please")).status()
+    );
 }
 
 #[test]

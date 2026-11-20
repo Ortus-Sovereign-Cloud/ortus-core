@@ -375,10 +375,13 @@ async fn expire(tx: &mut dyn AsyncTx, ortus: &Instance, now: i64) -> Result<(), 
         )
         .await
         .map_err(|e| e.to_string())?;
+    let rules = crate::retention::read_rules(tx, now)
+        .await
+        .map_err(|e| e.to_string())?;
     for row in rows {
         let id = row.text(0).unwrap_or_default().to_string();
         for app in &ortus.apps {
-            app.forget_user(tx, &id).await?;
+            app.forget_user(tx, &id, &rules).await?;
         }
         for sql in [
             "DELETE FROM core_sessions WHERE user_id = $1",

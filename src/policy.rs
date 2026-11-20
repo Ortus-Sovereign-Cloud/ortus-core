@@ -190,15 +190,15 @@ pub async fn labels(store: &dyn AsyncStore) -> StoreResult<Vec<Label>> {
         .collect())
 }
 
-/// The label `id`, or the default one; an unknown label is treated as the
-/// strictest there is (never as the most open).
+/// The label `id`, or the default one. An unknown (or deleted) label is
+/// judged by rules that refuse everything outside: never by another
+/// label, whose rank says nothing about how strict it is.
 pub async fn label(store: &dyn AsyncStore, id: Option<&str>) -> StoreResult<Label> {
-    let all = labels(store).await?;
     let wanted = id.unwrap_or(DEFAULT_LABEL);
-    if let Some(found) = all.iter().find(|l| l.id == wanted) {
-        return Ok(found.clone());
+    if let Some(found) = labels(store).await?.into_iter().find(|l| l.id == wanted) {
+        return Ok(found);
     }
-    Ok(all.into_iter().max_by_key(|l| l.rank).unwrap_or(Label {
+    Ok(Label {
         id: wanted.to_string(),
         name: wanted.to_uppercase(),
         rank: i64::MAX,
@@ -210,16 +210,25 @@ pub async fn label(store: &dyn AsyncStore, id: Option<&str>) -> StoreResult<Labe
             phones: false,
             watermark: true,
         },
-    }))
+    })
 }
 
-/// The domain of an address or a domain, lowercased.
+/// The domain of one address or a domain, lowercased; anything else
+/// (several addresses, display names, spaces) gives an empty domain, which
+/// matches no partner.
 fn domain_of(target: &str) -> String {
+    let target = target.trim();
+    if target.matches('@').count() > 1
+        || target
+            .chars()
+            .any(|c| c.is_whitespace() || matches!(c, ',' | ';' | '<' | '>' | '"' | '(' | ')'))
+    {
+        return String::new();
+    }
     target
         .rsplit('@')
         .next()
         .unwrap_or(target)
-        .trim()
         .trim_end_matches('.')
         .to_ascii_lowercase()
 }
@@ -315,15 +324,13 @@ pub async fn decide(instance: &Instance, ask: &Ask<'_>) -> StoreResult<Decision>
             .await;
         }
         Decision::Allow { .. } if rule == Rule::Warn => {
+            // An override that cannot be recorded does not happen.
             let mut detail = detail;
             detail["reason"] = json!(ask.reason.unwrap_or_default());
-            crate::auth::audit(
-                instance,
-                crate::audit::Event::new("policy.overridden", crate::audit::Outcome::Done)
-                    .by(ask.actor)
-                    .with(detail),
-            )
-            .await;
+            let event = crate::audit::Event::new("policy.overridden", crate::audit::Outcome::Done)
+                .by(ask.actor)
+                .with(detail);
+            crate::audit::record(instance.store.as_ref(), &event, now_ms()).await?;
         }
         _ => {}
     }
@@ -639,6 +646,18 @@ pub fn routes() -> Vec<Route> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn one_address_only() {
+        for bad in [
+            "x@evil.org,y@health.example.gov",
+            "Name <a@health.example.gov>",
+            "a@b@health.example.gov",
+            "a@health.example.gov b",
+        ] {
+            assert_eq!("", domain_of(bad), "{bad}");
+        }
+    }
 
     #[test]
     fn domains_are_checked() {

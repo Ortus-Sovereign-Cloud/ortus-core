@@ -54,6 +54,55 @@ fn sealing(store: Arc<dyn AsyncStore>) {
     // Another key does not open this database.
     let other = Keyring::from_keys(&[secrets::new_key()], Custody::Fixed).unwrap();
     assert!(block_on(secrets::check(s, &other)).is_err());
+
+    // Rotated by the environment ("new,old"): everything, the check value
+    // too, is re-sealed, so the old key can then be dropped.
+    let new = secrets::new_key();
+    let both = Keyring::from_keys(&[new.clone(), base64_of_test_key()], Custody::Fixed).unwrap();
+    block_on(secrets::seal_all(s, &both)).unwrap();
+    let only_new = Keyring::from_keys(&[new], Custody::Fixed).unwrap();
+    block_on(secrets::check(s, &only_new)).unwrap();
+
+    // A process still holding only the old key cannot read the new seals:
+    // its code check refuses, rather than treating the secret as empty.
+    let step = ortus_core::program::now_ms() / 30_000;
+    let empty_key_code = ortus_core::auth::credentials::totp(&[], step);
+    assert!(!block_on(ortus_core::auth::credentials::check_totp(
+        s,
+        &keys,
+        "u1",
+        &empty_key_code,
+        step * 30_000
+    ))
+    .unwrap());
+    let real = ortus_core::auth::credentials::totp(
+        &ortus_core::auth::credentials::unbase32("JBSWY3DPEHPK3PXP").unwrap(),
+        step,
+    );
+    assert!(
+        !block_on(ortus_core::auth::credentials::check_totp(
+            s,
+            &keys,
+            "u1",
+            &real,
+            step * 30_000
+        ))
+        .unwrap(),
+        "unreadable under the old key"
+    );
+    assert!(block_on(ortus_core::auth::credentials::check_totp(
+        s,
+        &only_new,
+        "u1",
+        &real,
+        step * 30_000
+    ))
+    .unwrap());
+}
+
+fn base64_of_test_key() -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.encode([7u8; 32])
 }
 
 #[test]

@@ -80,7 +80,12 @@ async fn stored(ortus: &Instance) -> Result<Option<Stored>, ApiError> {
             url: t(0),
             bind_dn: t(1),
             // Sealed at rest (crate::secrets).
-            password: ortus.keys.open_text(&t(2)).unwrap_or_default(),
+            // A password that does not open is no password: the bind then
+            // fails, rather than going in anonymously.
+            password: ortus
+                .keys
+                .open_text(&t(2))
+                .unwrap_or_else(|_| "\u{0}unreadable".into()),
             base_dn: t(3),
             user_filter: t(4),
             group_filter: t(5),

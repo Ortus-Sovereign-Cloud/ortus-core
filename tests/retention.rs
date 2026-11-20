@@ -38,6 +38,33 @@ impl App for Talk {
     fn migrations(&self) -> &'static [Migration] {
         TALK
     }
+    fn forget_user<'a>(
+        &'a self,
+        tx: &'a mut dyn AsyncTx,
+        user_id: &'a str,
+        rules: &'a Rules,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            for r in tx
+                .query(
+                    "SELECT id, room FROM talk_messages WHERE author = $1",
+                    &[user_id.into()],
+                )
+                .await
+                .map_err(|e| e.to_string())?
+            {
+                if !rules.held_channels.contains(r.text(1).unwrap_or_default()) {
+                    tx.execute(
+                        "DELETE FROM talk_messages WHERE id = $1",
+                        &[r.text(0).unwrap_or_default().into()],
+                    )
+                    .await
+                    .map_err(|e| e.to_string())?;
+                }
+            }
+            Ok(())
+        })
+    }
     fn purge<'a>(
         &'a self,
         tx: &'a mut dyn AsyncTx,
@@ -234,6 +261,28 @@ fn retention(store: Arc<dyn AsyncStore>) {
     );
     block_on(instance.store.execute("DELETE FROM ortus_jobs", &[])).unwrap();
     assert_eq!(vec!["a", "d"], sweep());
+
+    // An expired account goes, but what it wrote in a held room stays.
+    block_on(instance.store.execute("INSERT INTO talk_messages (id, author, room, created_at) VALUES ('e', $1, 'talk:room:board', $2)", &[marek.as_str().into(), now_ms().into()])).unwrap();
+    read(
+        "POST",
+        "/api/v1/admin/holds",
+        &owner,
+        json!({"case_ref": "2026-116", "channels": ["talk:room:board"]}),
+    );
+    block_on(instance.store.execute(
+        "UPDATE core_users SET expires_at = 1 WHERE id = $1",
+        &[marek.as_str().into()],
+    ))
+    .unwrap();
+    block_on(instance.store.execute("DELETE FROM ortus_jobs", &[])).unwrap();
+    assert_eq!(vec!["a", "d", "e"], sweep());
+    assert!(block_on(ortus_core::auth::accounts::by_id(
+        instance.store.as_ref(),
+        &marek
+    ))
+    .unwrap()
+    .is_none());
 
     // A held person's expired account is not deleted either.
     block_on(instance.store.execute(

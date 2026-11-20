@@ -95,7 +95,8 @@ impl Rules {
     }
 }
 
-async fn read_rules(tx: &mut dyn AsyncTx, now: i64) -> StoreResult<Rules> {
+/// The rules, read inside `tx`.
+pub async fn read_rules(tx: &mut dyn AsyncTx, now: i64) -> StoreResult<Rules> {
     let mut rules = Rules {
         now,
         ..Rules::default()

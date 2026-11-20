@@ -184,6 +184,8 @@ pub fn write_key_file(path: &Path, keys: &[String]) -> Result<(), String> {
     #[cfg(unix)]
     use std::os::unix::fs::OpenOptionsExt;
     let temp = path.with_extension("key.new");
+    // A leftover from an interrupted write could have wider permissions.
+    let _ = std::fs::remove_file(&temp);
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
     #[cfg(unix)]
@@ -191,6 +193,12 @@ pub fn write_key_file(path: &Path, keys: &[String]) -> Result<(), String> {
     let mut file = options
         .open(&temp)
         .map_err(|e| format!("{}: {e}", temp.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))
+            .map_err(|e| format!("{}: {e}", temp.display()))?;
+    }
     file.write_all(format!("{}\n", keys.join("\n")).as_bytes())
         .and_then(|()| file.sync_all())
         .map_err(|e| format!("{}: {e}", temp.display()))?;
@@ -270,6 +278,26 @@ pub async fn seal_all(store: &dyn AsyncStore, keys: &Keyring) -> Result<u64, Str
             .await
             .map_err(|e| e.to_string())?;
             changed += 1;
+        }
+    }
+    // The check value follows, so an older key can be dropped afterwards.
+    let check = tx
+        .query(
+            "SELECT value FROM core_settings WHERE key = 'secrets_check'",
+            &[],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    if let Some(value) = check.first().and_then(|r| r.text(0)).map(str::to_string) {
+        if !keys.is_current(value.as_bytes())
+            && keys.open_text(&value).ok().as_deref() == Some("ortus")
+        {
+            tx.execute(
+                "UPDATE core_settings SET value = $1 WHERE key = 'secrets_check'",
+                &[keys.seal_text("ortus").into()],
+            )
+            .await
+            .map_err(|e| e.to_string())?;
         }
     }
     tx.commit().await.map_err(|e| e.to_string())?;

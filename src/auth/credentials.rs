@@ -269,9 +269,17 @@ pub fn totp(secret: &[u8], step: i64) -> String {
 /// The step a code typed at `now_ms` matches, allowing one step of clock
 /// drift either way, and never a step at or before `last_step` (a code
 /// works once).
+/// An authenticator secret, if it opens and is one.
+fn open_secret(keys: &crate::secrets::Keyring, data: &Json) -> Option<Vec<u8>> {
+    let text = keys.open_text(data["secret"].as_str()?).ok()?;
+    unbase32(&text).filter(|secret| secret.len() >= 10)
+}
+
 pub fn totp_step(secret: &[u8], code: &str, now_ms: i64, last_step: i64) -> Option<i64> {
     let code: String = code.chars().filter(char::is_ascii_digit).collect();
-    if code.len() != 6 {
+    // An empty secret (one that could not be read) never matches: anyone
+    // could compute its codes.
+    if code.len() != 6 || secret.len() < 10 {
         return None;
     }
     let now = now_ms.div_euclid(30_000);
@@ -335,12 +343,10 @@ pub async fn confirm_totp(
     let Some(credential) = pending.first() else {
         return Ok(false);
     };
-    let secret = unbase32(
-        &keys
-            .open_text(credential.data["secret"].as_str().unwrap_or_default())
-            .unwrap_or_default(),
-    )
-    .unwrap_or_default();
+    // A secret that does not open refuses; it never becomes an empty key.
+    let Some(secret) = open_secret(keys, &credential.data) else {
+        return Ok(false);
+    };
     let Some(step) = totp_step(&secret, code, now_ms, i64::MIN) else {
         return Ok(false);
     };
@@ -371,12 +377,9 @@ pub async fn check_totp(
     now_ms: i64,
 ) -> StoreResult<bool> {
     for credential in of_kind(store, user_id, &Kind::Totp).await? {
-        let secret = unbase32(
-            &keys
-                .open_text(credential.data["secret"].as_str().unwrap_or_default())
-                .unwrap_or_default(),
-        )
-        .unwrap_or_default();
+        let Some(secret) = open_secret(keys, &credential.data) else {
+            continue;
+        };
         let last = credential.data["last_step"].as_i64().unwrap_or(i64::MIN);
         if let Some(step) = totp_step(&secret, code, now_ms, last) {
             let data = json!({ "secret": credential.data["secret"], "last_step": step });

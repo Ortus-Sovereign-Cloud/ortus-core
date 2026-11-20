@@ -126,11 +126,13 @@ pub trait App: Send + Sync + 'static {
     /// Deletes everything the app keeps for an account that is being
     /// deleted (an expired demo account, or an administrator's deletion).
     /// It works through `tx`, the deletion's own transaction, and must not
-    /// use the store otherwise; files go by queuing jobs in `tx`.
+    /// use the store otherwise; files go by queuing jobs in `tx`. What sits
+    /// in a channel on legal hold (`rules.held_channels`) stays.
     fn forget_user<'a>(
         &'a self,
         _tx: &'a mut dyn AsyncTx,
         _user_id: &'a str,
+        _rules: &'a crate::retention::Rules,
     ) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async { Ok(()) })
     }
