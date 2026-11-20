@@ -81,16 +81,20 @@ pub struct SigningKey {
 impl SigningKey {
     /// The current key, made if there is none yet. Two programs that make
     /// one at the same time keep the first.
-    pub async fn current(store: &dyn AsyncStore, now_ms: i64) -> StoreResult<Self> {
+    pub async fn current(
+        store: &dyn AsyncStore,
+        keys: &crate::secrets::Keyring,
+        now_ms: i64,
+    ) -> StoreResult<Self> {
         let load = |rows: Vec<crate::storage::Row>| -> StoreResult<Option<Self>> {
             let Some(row) = rows.first() else {
                 return Ok(None);
             };
-            let pair = EcdsaKeyPair::from_pkcs8(
-                &ECDSA_P256_SHA256_FIXED_SIGNING,
-                row.blob(1).unwrap_or_default(),
-            )
-            .map_err(|_| StoreError::Database("the OpenID signing key is damaged".into()))?;
+            let pkcs8 = keys
+                .open(row.blob(1).unwrap_or_default())
+                .map_err(StoreError::Database)?;
+            let pair = EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, &pkcs8)
+                .map_err(|_| StoreError::Database("the OpenID signing key is damaged".into()))?;
             Ok(Some(Self {
                 kid: row.text(0).unwrap_or_default().to_string(),
                 pair,
@@ -112,7 +116,7 @@ impl SigningKey {
                 "INSERT INTO core_oidc_keys (kid, pkcs8, created_at) VALUES ($1, $2, $3)",
                 &[
                     kid.as_str().into(),
-                    pkcs8.as_ref().to_vec().into(),
+                    keys.seal(pkcs8.as_ref()).into_bytes().into(),
                     now_ms.into(),
                 ],
             )

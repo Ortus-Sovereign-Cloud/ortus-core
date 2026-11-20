@@ -119,7 +119,7 @@ fn jwks(
     ortus: Arc<Arc<Instance>>,
 ) -> BoxFuture<'static, Response> {
     Box::pin(async move {
-        match SigningKey::current(ortus.store.as_ref(), now_ms()).await {
+        match SigningKey::current(ortus.store.as_ref(), &ortus.keys, now_ms()).await {
             Ok(key) => ok(&json!({ "keys": [key.jwk()] })),
             Err(_) => ApiError::internal().response(&request),
         }
@@ -325,7 +325,7 @@ fn token(
         if scope.split(' ').any(|s| s == "profile") {
             claims["name"] = json!(user.name);
         }
-        let id_token = match SigningKey::current(store, now_ms())
+        let id_token = match SigningKey::current(store, &ortus.keys, now_ms())
             .await
             .map_err(|e| e.to_string())
             .and_then(|key| key.sign(&claims))

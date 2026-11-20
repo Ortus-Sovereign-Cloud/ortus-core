@@ -279,6 +279,7 @@ fn the_configuration_can_start_an_app_switched_off() {
         Arc::clone(&instance.store),
         Arc::clone(&instance.files),
         apps(),
+        ortus_core::secrets::Keyring::for_tests(),
     );
     assert_eq!(vec!["chat:communicate:/chat"], listed(&off));
     // An administrator's switch wins over the configuration.

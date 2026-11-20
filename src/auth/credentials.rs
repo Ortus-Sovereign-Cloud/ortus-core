@@ -283,6 +283,7 @@ pub fn totp_step(secret: &[u8], code: &str, now_ms: i64, last_step: i64) -> Opti
 /// the app reads from a QR code.
 pub async fn start_totp(
     store: &dyn AsyncStore,
+    keys: &crate::secrets::Keyring,
     user_id: &str,
     email: &str,
     issuer: &str,
@@ -296,7 +297,8 @@ pub async fn start_totp(
         user_id,
         &Kind::TotpPending,
         "Authenticator app",
-        &json!({ "secret": encoded }),
+        // Sealed at rest (crate::secrets).
+        &json!({ "secret": keys.seal_text(&encoded) }),
         true,
         now_ms,
     )
@@ -324,6 +326,7 @@ fn percent(text: &str) -> String {
 /// Finishes enrolling with the first code from the app.
 pub async fn confirm_totp(
     store: &dyn AsyncStore,
+    keys: &crate::secrets::Keyring,
     user_id: &str,
     code: &str,
     now_ms: i64,
@@ -332,8 +335,12 @@ pub async fn confirm_totp(
     let Some(credential) = pending.first() else {
         return Ok(false);
     };
-    let secret =
-        unbase32(credential.data["secret"].as_str().unwrap_or_default()).unwrap_or_default();
+    let secret = unbase32(
+        &keys
+            .open_text(credential.data["secret"].as_str().unwrap_or_default())
+            .unwrap_or_default(),
+    )
+    .unwrap_or_default();
     let Some(step) = totp_step(&secret, code, now_ms, i64::MIN) else {
         return Ok(false);
     };
@@ -358,13 +365,18 @@ pub async fn has_totp(store: &dyn AsyncStore, user_id: &str) -> StoreResult<bool
 
 pub async fn check_totp(
     store: &dyn AsyncStore,
+    keys: &crate::secrets::Keyring,
     user_id: &str,
     code: &str,
     now_ms: i64,
 ) -> StoreResult<bool> {
     for credential in of_kind(store, user_id, &Kind::Totp).await? {
-        let secret =
-            unbase32(credential.data["secret"].as_str().unwrap_or_default()).unwrap_or_default();
+        let secret = unbase32(
+            &keys
+                .open_text(credential.data["secret"].as_str().unwrap_or_default())
+                .unwrap_or_default(),
+        )
+        .unwrap_or_default();
         let last = credential.data["last_step"].as_i64().unwrap_or(i64::MIN);
         if let Some(step) = totp_step(&secret, code, now_ms, last) {
             let data = json!({ "secret": credential.data["secret"], "last_step": step });

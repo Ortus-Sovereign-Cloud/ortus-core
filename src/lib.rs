@@ -24,6 +24,7 @@ pub mod policy;
 pub mod program;
 pub mod retention;
 pub mod runtime;
+pub mod secrets;
 pub mod services;
 pub mod storage;
 pub mod web;

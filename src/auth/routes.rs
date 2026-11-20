@@ -190,7 +190,7 @@ async fn code_sign_in(
         &crate::auth::client_address(request, connection, &ortus.config.trusted_proxies),
     );
     check_limits(store, &keys).await?;
-    if !credentials::check_totp(store, &user.id, &input.code, now_ms()).await? {
+    if !credentials::check_totp(store, &ortus.keys, &user.id, &input.code, now_ms()).await? {
         limits::failed(store, &keys, now_ms()).await?;
         super::audit(
             ortus,
@@ -360,6 +360,7 @@ async fn start_totp(request: &Request, ortus: &Arc<Instance>) -> Result<Response
         .to_string();
     let (secret, uri) = credentials::start_totp(
         ortus.store.as_ref(),
+        &ortus.keys,
         &me.user.id,
         &me.user.email,
         &issuer,
@@ -386,7 +387,15 @@ struct ConfirmBody {
 async fn confirm_totp(request: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiError> {
     let me = session(request, ortus).await?;
     let input: ConfirmBody = body(request)?;
-    if credentials::confirm_totp(ortus.store.as_ref(), &me.user.id, &input.code, now_ms()).await? {
+    if credentials::confirm_totp(
+        ortus.store.as_ref(),
+        &ortus.keys,
+        &me.user.id,
+        &input.code,
+        now_ms(),
+    )
+    .await?
+    {
         super::audit(
             ortus,
             crate::audit::Event::new("auth.credential", crate::audit::Outcome::Done)

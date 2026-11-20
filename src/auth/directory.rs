@@ -79,7 +79,8 @@ async fn stored(ortus: &Instance) -> Result<Option<Stored>, ApiError> {
         Stored {
             url: t(0),
             bind_dn: t(1),
-            password: t(2),
+            // Sealed at rest (crate::secrets).
+            password: ortus.keys.open_text(&t(2)).unwrap_or_default(),
             base_dn: t(3),
             user_filter: t(4),
             group_filter: t(5),
@@ -190,7 +191,7 @@ async fn save(request: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiE
         &[
             settings.url.as_str().into(),
             settings.bind_dn.as_str().into(),
-            settings.password.as_str().into(),
+            ortus.keys.seal_text(&settings.password).into(),
             settings.base_dn.as_str().into(),
             settings.user_filter.as_str().into(),
             settings.group_filter.as_str().into(),

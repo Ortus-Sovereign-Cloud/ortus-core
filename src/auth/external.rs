@@ -465,8 +465,10 @@ fn callback(
                 form::encode(&provider.client_id),
                 form::encode(&verifier)
             );
-            if let Some(secret) = &provider.client_secret {
-                form_body.push_str(&format!("&client_secret={}", form::encode(secret)));
+            if let Some(sealed) = &provider.client_secret {
+                // Sealed at rest (crate::secrets); opened only to send.
+                let secret = ortus.keys.open_text(sealed).map_err(|_| "server")?;
+                form_body.push_str(&format!("&client_secret={}", form::encode(&secret)));
             }
             let response = crate::http::client()?
                 .post(token_url)
@@ -620,7 +622,7 @@ async fn add(request: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiEr
                 provider.name.as_str().into(),
                 provider.issuer.as_str().into(),
                 provider.client_id.as_str().into(),
-                provider.client_secret.clone().into(),
+                provider.client_secret.as_deref().map(|s| ortus.keys.seal_text(s)).into(),
                 provider.scopes.as_str().into(),
                 i64::from(provider.link_by_email).into(),
                 i64::from(provider.create_accounts).into(),

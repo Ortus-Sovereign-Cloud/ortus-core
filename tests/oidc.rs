@@ -233,8 +233,22 @@ fn one_signing_key(store: Arc<dyn ortus_core::storage::AsyncStore>) {
         0,
     ))
     .unwrap();
-    let first = block_on(ortus_core::oidc::SigningKey::current(store.as_ref(), 1)).unwrap();
-    let again = block_on(ortus_core::oidc::SigningKey::current(store.as_ref(), 2)).unwrap();
+    let keys = ortus_core::secrets::Keyring::for_tests();
+    let first = block_on(ortus_core::oidc::SigningKey::current(
+        store.as_ref(),
+        &keys,
+        1,
+    ))
+    .unwrap();
+    let again = block_on(ortus_core::oidc::SigningKey::current(
+        store.as_ref(),
+        &keys,
+        2,
+    ))
+    .unwrap();
+    // Sealed at rest.
+    let stored = block_on(store.query("SELECT pkcs8 FROM core_oidc_keys", &[])).unwrap();
+    assert!(stored[0].blob(0).unwrap().starts_with(b"enc:v1:"));
     assert_eq!(first.kid, again.kid);
     assert_eq!(first.jwk(), again.jwk());
 }

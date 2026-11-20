@@ -176,6 +176,9 @@ fn a_running_program_is_backed_up_and_restored_into_a_new_installation() {
     let other = base.0.join("restored");
     let output = run(&other, &["restore", backup.to_str().unwrap()]);
     assert!(output.status.success(), "{}", text(&output));
+    // A backup never carries the secrets key; the operator brings it.
+    assert!(text(&output).contains("secrets.key"), "{}", text(&output));
+    std::fs::copy(data.join("secrets.key"), other.join("secrets.key")).unwrap();
     assert_eq!(
         "flood report",
         std::fs::read_to_string(other.join("files/drive/report.txt")).unwrap()
@@ -339,4 +342,51 @@ fn s3_works_on_a_machine_without_a_certificate_store() {
         .output()
         .unwrap();
     assert!(output.status.success(), "{}", text(&output));
+}
+
+#[test]
+fn rotating_keys_keeps_the_installation_working() {
+    let base = dir();
+    let data = base.0.join("data");
+    let running = serve(&data, "all");
+    drop(running);
+    let before = std::fs::read_to_string(data.join("secrets.key")).unwrap();
+    assert_eq!(1, before.lines().count());
+    let output = run(&data, &["rotate-keys"]);
+    assert!(output.status.success(), "{}", text(&output));
+    let after = std::fs::read_to_string(data.join("secrets.key")).unwrap();
+    assert_eq!(
+        2,
+        after.lines().count(),
+        "the old key stays for old backups"
+    );
+    assert_eq!(before.trim(), after.lines().nth(1).unwrap());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            0o600,
+            std::fs::metadata(data.join("secrets.key"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777
+        );
+    }
+    // Started again with the new key, it serves; with a wrong key it refuses.
+    let running = serve(&data, "all");
+    assert!(get(running.port, "/api/v1/health").contains("\"status\":\"ok\""));
+    drop(running);
+    std::fs::write(
+        data.join("secrets.key"),
+        format!("{}\n", ortus_core::secrets::new_key()),
+    )
+    .unwrap();
+    let output = run(&data, &["rotate-keys"]);
+    assert!(!output.status.success());
+    assert!(
+        text(&output).contains("secrets key does not open"),
+        "{}",
+        text(&output)
+    );
 }

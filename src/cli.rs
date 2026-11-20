@@ -9,6 +9,7 @@
 //! ortus check-backup <dir> check a backup without restoring it
 //! ortus restore <dir>      restore a backup into an empty installation
 //! ortus setup-link         a new link to create the first owner
+//! ortus rotate-keys        a new secrets key; every stored secret re-sealed
 //! ortus version            print the version
 //! ```
 //!
@@ -38,6 +39,7 @@ const HELP: &str =
   check-backup <dir>  check that a backup is whole and that this program can restore it
   restore <dir>       restore a backup into an empty database and file store
   setup-link          print a new link to create the first owner (until there is one)
+  rotate-keys         seal every stored secret under a new key (older keys stay to open old backups)
   version             print the version
 
 Settings come from ORTUS_CONFIG (or ./ortus.toml) and ORTUS_* variables.";
@@ -120,6 +122,53 @@ pub async fn run(name: &str, version: &str, apps: Vec<Arc<dyn App>>, args: &[Str
                 "ortus: restored {dir} (taken by Ortus {}); start the program to finish any upgrade",
                 checked.manifest.ortus_version
             );
+            // The secrets in the backup open only with the key they were
+            // sealed with, which a backup never carries.
+            let env = std::env::var("ORTUS_SECRETS_KEY").ok().filter(|v| !v.trim().is_empty());
+            let key_file = config.data_dir.join("secrets.key");
+            if env.is_none() && !key_file.exists() {
+                println!(
+                    "ortus: before starting, put the old installation's secrets key in place: copy its secrets.key to {} (or set ORTUS_SECRETS_KEY)",
+                    key_file.display()
+                );
+            } else {
+                let keys = crate::secrets::Keyring::load(&config.data_dir, env)?;
+                crate::secrets::check(store.as_ref(), &keys).await?;
+            }
+            Ok(())
+        })
+        .await,
+        ["rotate-keys"] => with_config(|config| async move {
+            let store = config.open_store().await.map_err(|e| e.to_string())?;
+            let env = std::env::var("ORTUS_SECRETS_KEY").ok().filter(|v| !v.trim().is_empty());
+            let old = crate::secrets::Keyring::load(&config.data_dir, env.clone())?;
+            crate::secrets::check(store.as_ref(), &old).await?;
+            let keys = match (&old.custody, env) {
+                (crate::secrets::Custody::File(path), _) => {
+                    // The new key goes first; the old ones stay, so a crash
+                    // half way, and older backups, still open.
+                    let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+                    let mut lines = vec![crate::secrets::new_key()];
+                    lines.extend(text.lines().filter(|l| !l.trim().is_empty()).map(str::to_string));
+                    crate::secrets::write_key_file(path, &lines)?;
+                    crate::secrets::Keyring::from_keys(&lines, old.custody.clone())?
+                }
+                (_, Some(_)) => {
+                    // The environment holds the keys: the operator puts a new
+                    // one first ("new,old") and runs this to re-seal.
+                    if old.ids().len() < 2 {
+                        println!("ortus: with ORTUS_SECRETS_KEY, rotate by setting it to \"<new>,<old>\" and running rotate-keys again; a new key: {}", crate::secrets::new_key());
+                        return Ok(());
+                    }
+                    println!("ortus: re-sealing under the first key of ORTUS_SECRETS_KEY");
+                    old
+                }
+                _ => return Err("no secrets key to rotate".into()),
+            };
+            let changed = crate::secrets::seal_all(store.as_ref(), &keys).await?;
+            crate::auth::policy::set_setting(store.as_ref(), "secrets_check", &keys.seal_text("ortus")).await.map_err(|e| e.to_string())?;
+            crate::auth::policy::set_setting(store.as_ref(), "keys_rotated_at", &now_ms().to_string()).await.map_err(|e| e.to_string())?;
+            println!("ortus: secrets sealed under key {}: {changed} values re-sealed; restart the program", keys.current_id());
             Ok(())
         })
         .await,

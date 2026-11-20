@@ -16,6 +16,8 @@ pub struct Instance {
     pub apps: Vec<Arc<dyn App>>,
     pub switches: Switches,
     pub services: Services,
+    /// Seals and opens the secrets the database keeps.
+    pub keys: Arc<crate::secrets::Keyring>,
 }
 
 /// Every schema of the core and of `apps`, in the order they install.
@@ -39,7 +41,13 @@ impl Instance {
         install(store.as_ref(), &schemas(&apps), now_ms)
             .await
             .map_err(|e| e.to_string())?;
-        Ok(Self::assemble(config, store, files, apps))
+        let keys = crate::secrets::Keyring::load(
+            &config.data_dir,
+            std::env::var("ORTUS_SECRETS_KEY").ok(),
+        )?;
+        crate::secrets::check(store.as_ref(), &keys).await?;
+        crate::secrets::seal_all(store.as_ref(), &keys).await?;
+        Ok(Self::assemble(config, store, files, apps, keys))
     }
 
     /// An instance on an open database whose schemas are installed.
@@ -48,6 +56,7 @@ impl Instance {
         store: Arc<dyn AsyncStore>,
         files: Arc<Files>,
         apps: Vec<Arc<dyn App>>,
+        keys: crate::secrets::Keyring,
     ) -> Arc<Self> {
         let switches = Switches::new(Arc::clone(&store), config.apps_off.clone());
         let instance = Arc::new(Self {
@@ -57,6 +66,7 @@ impl Instance {
             apps,
             switches,
             services: Services::new(),
+            keys: Arc::new(keys),
         });
         for app in &instance.apps {
             app.provide(&instance, &instance.services);
@@ -124,7 +134,13 @@ pub mod testing {
         crate::app::check(&apps).expect("apps that fit together");
         crate::runtime::block_on(install(store.as_ref(), &schemas(&apps), 0)).expect("the schemas");
         let files = Arc::new(Files::local(&dir).expect("a files directory"));
-        Instance::assemble(config, store, files, apps)
+        Instance::assemble(
+            config,
+            store,
+            files,
+            apps,
+            crate::secrets::Keyring::for_tests(),
+        )
     }
 }
 
@@ -185,6 +201,12 @@ pub mod testing_store {
             crate::auth::random_hex(4)
         ));
         let files = Arc::new(Files::local(&dir).expect("a files directory"));
-        Instance::assemble(config, store, files, apps)
+        Instance::assemble(
+            config,
+            store,
+            files,
+            apps,
+            crate::secrets::Keyring::for_tests(),
+        )
     }
 }
