@@ -135,6 +135,10 @@ pub mod testing {
         crate::app::check(&apps).expect("apps that fit together");
         crate::runtime::block_on(install(store.as_ref(), &schemas(&apps), 0)).expect("the schemas");
         let files = Arc::new(Files::local(&dir).expect("a files directory"));
+        // Its data (restore points among them) beside its files, never
+        // in the working directory.
+        let mut config = config;
+        config.data_dir = dir.with_extension("data");
         Instance::assemble(
             config,
             store,
@@ -202,6 +206,10 @@ pub mod testing_store {
             crate::auth::random_hex(4)
         ));
         let files = Arc::new(Files::local(&dir).expect("a files directory"));
+        // Its data (restore points among them) beside its files, never
+        // in the working directory.
+        let mut config = config;
+        config.data_dir = dir.with_extension("data");
         Instance::assemble(
             config,
             store,

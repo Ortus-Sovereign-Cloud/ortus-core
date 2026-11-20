@@ -4,6 +4,7 @@ import { LocalizeController } from "@lit-material/core/localize.js";
 import { call, type Me } from "../api.js";
 import { appText, t } from "../i18n.js";
 import type { MessageKey } from "../locales/en.js";
+import "./ortus-admin-backup.js";
 import "./ortus-admin-overview.js";
 import "./ortus-admin-signin.js";
 import "./ortus-admin-sovereignty.js";
@@ -28,6 +29,7 @@ const SECTIONS: Section[] = [
   { path: "/admin/users", label: "admin.users" },
   { path: "/admin/sign-in", label: "admin.signIn" },
   { path: "/admin/sovereignty", label: "admin.sovereignty" },
+  { path: "/admin/backup", label: "admin.backup" },
 ];
 
 /** The admin console: its own navigation beside the section shown. */
@@ -145,6 +147,8 @@ export class OrtusAdmin extends LitElement {
         return html`<ortus-admin-users .me=${this.me}></ortus-admin-users>`;
       case "/admin/sign-in":
         return html`<ortus-admin-signin .me=${this.me}></ortus-admin-signin>`;
+      case "/admin/backup":
+        return html`<ortus-admin-backup .me=${this.me}></ortus-admin-backup>`;
       case "/admin/sovereignty":
         return html`<ortus-admin-sovereignty .me=${this.me}></ortus-admin-sovereignty>`;
       default:

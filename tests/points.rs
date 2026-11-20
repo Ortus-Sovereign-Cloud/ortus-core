@@ -88,6 +88,13 @@ fn pointing(store: Arc<dyn AsyncStore>) {
             .unwrap()
     };
     assert_eq!(users(store.as_ref()), users(target.as_ref()));
+    // The restore test does the same into a scratch installation, checks
+    // rows, files and keys, and records it.
+    let tested = block_on(points::test_restore(&instance, &dest, &name));
+    assert!(tested.ok, "{tested:?}");
+    assert!(tested.detail.ends_with("keys open"), "{tested:?}");
+    let recorded = block_on(store.query("SELECT ok FROM core_restore_tests", &[])).unwrap();
+    assert_eq!(Some(1), recorded.last().and_then(|r| r.int(0)));
     assert_eq!(
         Some(b"bus timetable".to_vec()),
         block_on(target_files.get("drive/c.txt")).unwrap()

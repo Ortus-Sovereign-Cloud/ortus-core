@@ -91,7 +91,10 @@ pub const PERIODIC: &[(&str, i64)] = &[
 
 /// Jobs of the core that run outside a transaction (long ones).
 pub fn core_outside_jobs(instance: &Arc<Instance>) -> Vec<app::OutsideJobKind> {
-    vec![points::job(Arc::clone(instance))]
+    vec![
+        points::job(Arc::clone(instance)),
+        points::test_job(Arc::clone(instance)),
+    ]
 }
 
 /// The web application of an installation: the public API and the web

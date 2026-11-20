@@ -267,6 +267,48 @@
         ]
       }
     },
+    "/api/v1/admin/backup/tests": {
+      "post": {
+        "description": "For owners.",
+        "operationId": "backupTestRestore",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Tests a restore now: the newest point restored whole into a scratch installation and checked (rows, files, keys), timed and recorded. Runs in the background; GET /admin/backup shows the result.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/directory": {
       "get": {
         "description": "For administrators and owners.",

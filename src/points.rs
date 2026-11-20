@@ -30,7 +30,7 @@ use sha2::{Digest, Sha256};
 use crate::backup::{BackupError, FilesEntry, Manifest, TableEntry, FORMAT, FORMAT_VERSION};
 use crate::files::{Files, S3Settings};
 use crate::instance::Instance;
-use crate::storage::{Migration, Schema};
+use crate::storage::{AsyncStore, Migration, Schema};
 
 const MIGRATIONS: &[Migration] = &[Migration {
     version: 1,
@@ -471,6 +471,16 @@ pub async fn run(instance: &Instance) -> Result<(), String> {
     crate::audit::record(s, &crate::audit::Event::new("backup.point_taken", crate::audit::Outcome::Done).with(json!({"point": point.name, "files": point.files, "bytes": point.bytes, "pruned": removed})), now)
         .await
         .map_err(|e| e.to_string())?;
+    // Once a month, the new point is restored whole as a test.
+    let tested = s
+        .query("SELECT MAX(at) FROM core_restore_tests", &[])
+        .await
+        .map_err(|e| e.to_string())?
+        .first()
+        .and_then(|r| r.int(0));
+    if tested.is_none_or(|t| now - t >= TEST_EVERY) {
+        test_restore(instance, &dest, &point.name).await;
+    }
     Ok(())
 }
 
@@ -481,6 +491,35 @@ pub fn job(instance: Arc<Instance>) -> crate::app::OutsideJobKind {
         handler: Box::new(move |_| {
             let instance = Arc::clone(&instance);
             Box::pin(async move { run(&instance).await })
+        }),
+    }
+}
+
+/// The job that tests a restore on demand: its payload is the point (the
+/// newest when empty).
+pub fn test_job(instance: Arc<Instance>) -> crate::app::OutsideJobKind {
+    crate::app::OutsideJobKind {
+        kind: TEST_JOB.into(),
+        handler: Box::new(move |job| {
+            let instance = Arc::clone(&instance);
+            let wanted = job.payload.clone();
+            Box::pin(async move {
+                let dest = destination(&instance.config.data_dir)?;
+                let name = if wanted.is_empty() {
+                    instance
+                        .store
+                        .query("SELECT name FROM core_points ORDER BY at DESC LIMIT 1", &[])
+                        .await
+                        .map_err(|e| e.to_string())?
+                        .first()
+                        .and_then(|r| r.text(0).map(str::to_string))
+                        .ok_or("there is no restore point to test")?
+                } else {
+                    wanted
+                };
+                test_restore(&instance, &dest, &name).await;
+                Ok(())
+            })
         }),
     }
 }
@@ -581,6 +620,7 @@ pub fn routes() -> Vec<crate::api::Route> {
     vec![
         crate::api::Route { method: crate::api::Method::Get, path: "/admin/backup", id: "backupPoints", tag: "admin", summary: "Restore points (hourly for 48 hours, daily for 30 days, weekly for a year) and the last restore test.", access: crate::auth::Access::Admin, response: object, handler: h_points },
         crate::api::Route { method: crate::api::Method::Post, path: "/admin/backup/points", id: "backupTakePoint", tag: "admin", summary: "Takes a restore point now.", access: crate::auth::Access::Owner, response: object, handler: h_take },
+        crate::api::Route { method: crate::api::Method::Post, path: "/admin/backup/tests", id: "backupTestRestore", tag: "admin", summary: "Tests a restore now: the newest point restored whole into a scratch installation and checked (rows, files, keys), timed and recorded. Runs in the background; GET /admin/backup shows the result.", access: crate::auth::Access::Owner, response: object, handler: h_test },
         crate::api::Route { method: crate::api::Method::Patch, path: "/admin/backup", id: "backupSettings", tag: "admin", summary: "{selfRestore}: whether people bring back their own things themselves.", access: crate::auth::Access::Owner, response: object, handler: h_settings },
         crate::api::Route { method: crate::api::Method::Get, path: "/backup/choices", id: "backupChoices", tag: "backup", summary: "?point=&app=&what=&user=(address): a person's things of that kind as they were at the point (an administrator, or the person when self-restore is on).", access: crate::auth::Access::Signed, response: object, handler: h_choices },
         crate::api::Route { method: crate::api::Method::Post, path: "/backup/restore", id: "backupRestore", tag: "backup", summary: "{point, app, what, user (address), id}: brings one back, as it was, into a new place beside the person's own.", access: crate::auth::Access::Signed, response: object, handler: h_restore },
@@ -894,4 +934,163 @@ fn h_restore(
     instance: Arc<Instance>,
 ) -> crate::storage::BoxFuture<'static, rust_web_server::prelude::Response> {
     Box::pin(async move { crate::api::answer(&request, restore_one(&request, &instance).await) })
+}
+
+/// The job that tests a restore (on demand, and monthly after a point).
+pub const TEST_JOB: &str = "core.restore_test";
+/// How often a restore is tested on its own.
+const TEST_EVERY: i64 = 30 * DAY;
+
+/// What a restore test found.
+#[derive(Debug, Serialize)]
+pub struct Tested {
+    pub point: String,
+    pub ok: bool,
+    pub duration_ms: i64,
+    pub detail: String,
+}
+
+/// Restores point `name` whole into a scratch installation beside the data
+/// (its own SQLite database and file directory) and checks it: every
+/// table's rows, every file, and that this installation's keys open what
+/// it sealed. Timed and recorded; the scratch installation goes after.
+pub async fn test_restore(instance: &Instance, dest: &Files, name: &str) -> Tested {
+    let started = std::time::Instant::now();
+    let scratch = instance
+        .config
+        .data_dir
+        .join(format!("restore-test-{}", crate::auth::random_hex(6)));
+    let outcome = test_into(instance, dest, name, &scratch).await;
+    let _ = std::fs::remove_dir_all(&scratch);
+    let duration_ms = started.elapsed().as_millis() as i64;
+    let (ok, detail) = match outcome {
+        Ok(detail) => (true, detail),
+        Err(e) => (false, e),
+    };
+    let now = crate::program::now_ms();
+    let s = instance.store.as_ref();
+    let _ = s
+        .execute(
+            "INSERT INTO core_restore_tests (at, point, ok, duration_ms, detail) VALUES ($1, $2, $3, $4, $5)",
+            &[now.into(), name.into(), i64::from(ok).into(), duration_ms.into(), detail.as_str().into()],
+        )
+        .await;
+    let _ = crate::audit::record(
+        s,
+        &crate::audit::Event::new(
+            "backup.restore_tested",
+            if ok {
+                crate::audit::Outcome::Done
+            } else {
+                crate::audit::Outcome::Failed
+            },
+        )
+        .with(json!({"point": name, "durationMs": duration_ms, "detail": detail})),
+        now,
+    )
+    .await;
+    Tested {
+        point: name.to_string(),
+        ok,
+        duration_ms,
+        detail,
+    }
+}
+
+async fn test_into(
+    instance: &Instance,
+    dest: &Files,
+    name: &str,
+    scratch: &Path,
+) -> Result<String, String> {
+    let exported = scratch.join("backup");
+    export(dest, name, &exported)
+        .await
+        .map_err(|e| e.to_string())?;
+    let schemas = crate::instance::schemas(&instance.apps);
+    let checked = crate::backup::check(&exported, &schemas).map_err(|e| e.to_string())?;
+    let target =
+        crate::storage::SqliteStore::open(&scratch.join("ortus.db")).map_err(|e| e.to_string())?;
+    let files = Files::local(&scratch.join("files")).map_err(|e| e.to_string())?;
+    crate::backup::restore(
+        &checked,
+        &schemas,
+        &target,
+        &files,
+        crate::program::now_ms(),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    // Every table, row for row.
+    for table in &checked.manifest.tables {
+        let n = target
+            .query(&format!("SELECT COUNT(*) FROM {}", table.name), &[])
+            .await
+            .map_err(|e| e.to_string())?
+            .first()
+            .and_then(|r| r.int(0))
+            .unwrap_or(-1);
+        if n != table.rows as i64 {
+            return Err(format!(
+                "table {}: {} rows restored of {}",
+                table.name, n, table.rows
+            ));
+        }
+    }
+    // Every file.
+    let restored = files.list("").await.map_err(|e| e.to_string())?.len() as u64;
+    if restored != checked.manifest.files.count {
+        return Err(format!(
+            "{} files restored of {}",
+            restored, checked.manifest.files.count
+        ));
+    }
+    // This installation's keys open what it sealed.
+    crate::secrets::check(&target, &instance.keys).await?;
+    Ok(format!(
+        "{} tables, {} files, keys open",
+        checked.manifest.tables.len(),
+        checked.manifest.files.count
+    ))
+}
+
+async fn test_now(
+    request: &rust_web_server::prelude::Request,
+    instance: &Arc<Instance>,
+) -> Result<rust_web_server::prelude::Response, crate::api::ApiError> {
+    let me = crate::auth::current(request, instance)
+        .await
+        .ok_or_else(crate::api::ApiError::sign_in)?
+        .user;
+    let now = crate::program::now_ms();
+    // One at a time: the job's id is the minute it was asked for.
+    let id = format!("restore-test-{}", now / 60_000);
+    crate::jobs::enqueue(
+        instance.store.as_ref(),
+        &crate::jobs::NewJob {
+            id: &id,
+            kind: TEST_JOB,
+            payload: "",
+            run_at: now,
+            max_attempts: 1,
+        },
+        now,
+    )
+    .await?;
+    crate::auth::audit(
+        instance,
+        crate::audit::Event::new("backup.restore_test_asked", crate::audit::Outcome::Done)
+            .by(&me.id),
+    )
+    .await;
+    Ok(crate::api::ok(&json!({"started": true})))
+}
+
+fn h_test(
+    request: rust_web_server::prelude::Request,
+    _: rust_web_server::prelude::PathParams,
+    _: rust_web_server::prelude::ConnectionInfo,
+    instance: Arc<Instance>,
+) -> crate::storage::BoxFuture<'static, rust_web_server::prelude::Response> {
+    Box::pin(async move { crate::api::answer(&request, test_now(&request, &instance).await) })
 }

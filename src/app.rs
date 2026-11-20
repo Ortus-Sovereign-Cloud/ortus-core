@@ -276,6 +276,7 @@ pub fn check(apps: &[Arc<dyn App>]) -> Result<(), String> {
             "/admin/users",
             "/admin/sign-in",
             "/admin/sovereignty",
+            "/admin/backup",
         ];
         for section in app.admin_sections() {
             let name = section.path.strip_prefix("/admin/").unwrap_or_default();
