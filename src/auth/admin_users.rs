@@ -85,6 +85,68 @@ async fn row(store: &dyn AsyncStore, user: &User) -> StoreResult<Value> {
     }))
 }
 
+/// Everyone's listing facts in four queries, whatever the number of people.
+async fn everyone(store: &dyn AsyncStore) -> StoreResult<Vec<Value>> {
+    use std::collections::HashMap;
+    let mut second: HashMap<String, &str> = HashMap::new();
+    for r in store
+        .query(
+            "SELECT user_id, kind FROM core_credentials WHERE kind IN ('passkey', 'totp')",
+            &[],
+        )
+        .await?
+    {
+        let id = r.text(0).unwrap_or_default().to_string();
+        let kind = if r.text(1) == Some("passkey") {
+            "key"
+        } else {
+            "app"
+        };
+        let entry = second.entry(id).or_insert(kind);
+        if kind == "key" {
+            *entry = "key";
+        }
+    }
+    let seen: HashMap<String, i64> = store
+        .query(
+            "SELECT user_id, MAX(last_seen_at) FROM core_sessions GROUP BY user_id",
+            &[],
+        )
+        .await?
+        .iter()
+        .filter_map(|r| Some((r.text(0)?.to_string(), r.int(1)?)))
+        .collect();
+    let mut groups: HashMap<String, Vec<String>> = HashMap::new();
+    for r in store.query("SELECT m.user_id, g.name FROM core_group_members m JOIN core_groups g ON g.id = m.group_id ORDER BY g.name", &[]).await? {
+        groups.entry(r.text(0).unwrap_or_default().to_string()).or_default().push(r.text(1).unwrap_or_default().to_string());
+    }
+    let quotas: HashMap<String, i64> = store
+        .query(
+            "SELECT id, quota_bytes FROM core_users WHERE quota_bytes IS NOT NULL",
+            &[],
+        )
+        .await?
+        .iter()
+        .filter_map(|r| Some((r.text(0)?.to_string(), r.int(1)?)))
+        .collect();
+    Ok(accounts::list(store)
+        .await?
+        .iter()
+        .map(|user| {
+            json!({
+                "id": user.id, "email": user.email, "name": user.name, "role": user.role.name(), "state": user.state.name(),
+                "sign_in": second.get(&user.id).copied().unwrap_or("off"),
+                "last_active": seen.get(&user.id),
+                "quota_bytes": quotas.get(&user.id),
+                // Storage use comes from the apps that keep files (drive, mail).
+                "used_bytes": 0,
+                "groups": groups.get(&user.id).cloned().unwrap_or_default(),
+                "expires_at": user.expires_at,
+            })
+        })
+        .collect())
+}
+
 async fn list(request: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiError> {
     let store = ortus.store.as_ref();
     let uri = request.request_uri.clone();
@@ -94,18 +156,20 @@ async fn list(request: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiE
     let filter = crate::form::query(&uri, "filter").unwrap_or_default();
     let mut people = Vec::new();
     let (mut without_second, mut near_quota) = (0, 0);
-    for user in accounts::list(store).await? {
-        let entry = row(store, &user).await?;
+    let all = everyone(store).await?;
+    let total = all.len();
+    for entry in all {
         let no_second = entry["sign_in"] == "off";
         let near = entry["quota_bytes"]
             .as_i64()
             .is_some_and(|quota| entry["used_bytes"].as_i64().unwrap_or(0) * 10 >= quota * 9);
         without_second += i64::from(no_second);
         near_quota += i64::from(near);
+        let text = |field: &str| entry[field].as_str().unwrap_or_default().to_lowercase();
         let groups = entry["groups"].to_string().to_lowercase();
         if !q.is_empty()
-            && !user.name.to_lowercase().contains(&q)
-            && !user.email.contains(&q)
+            && !text("name").contains(&q)
+            && !text("email").contains(&q)
             && !groups.contains(&q)
         {
             continue;
@@ -118,7 +182,7 @@ async fn list(request: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiE
     let groups = store.query("SELECT COUNT(*) FROM core_groups", &[]).await?;
     Ok(ok(&json!({
         "users": people,
-        "total": accounts::count(store).await?,
+        "total": total,
         "groups": groups.first().and_then(|r| r.int(0)).unwrap_or(0),
         "without_second_factor": without_second,
         "near_quota": near_quota,
