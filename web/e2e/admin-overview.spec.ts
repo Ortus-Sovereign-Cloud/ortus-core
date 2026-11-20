@@ -20,11 +20,10 @@ test("the overview shows six steps and the installation", async ({ page }) => {
   await expect(page.getByText(en["overview.healthy"])).toBeVisible();
 });
 
-test("confirming where data lives marks that step done", async ({ page }) => {
-  const answer = await page.request.post("/api/v1/admin/overview/data-confirmed", { headers: { "X-Requested-With": "ortus" } });
-  expect(answer.status()).toBe(200);
+test("confirming where data lives marks that step done, in any order", async ({ page }) => {
   await page.goto("/admin");
   const step = page.getByRole("listitem").filter({ hasText: en["overview.data.title"] });
+  await step.getByRole("button", { name: en["overview.data.action"] }).click();
   await expect(step.getByText(en["overview.done"], { exact: true })).toBeVisible();
 });
 

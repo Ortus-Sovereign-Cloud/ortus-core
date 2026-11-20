@@ -250,14 +250,15 @@ export class OrtusAdminOverview extends LitElement {
     }
   }
 
-  private action(id: StepId) {
+  /** The step's action: filled for the next step, outlined for later ones (they may be done in any order). */
+  private action(id: StepId, next: boolean) {
+    const kind = next ? "button primary" : "button";
     if (id === "data") {
-      return this.me?.role === "owner"
-        ? html`<button class="button primary" @click=${this.confirmData}>${t(this.localize, "overview.data.action")}</button>`
-        : nothing;
+      return this.me?.role === "owner" ? html`<button class=${kind} @click=${this.confirmData}>${t(this.localize, "overview.data.action")}</button>` : nothing;
     }
     const action = ACTIONS[id];
-    return action ? html`<a class="button primary" href=${action.href}>${t(this.localize, action.label)}</a>` : nothing;
+    if (action) return html`<a class=${kind} href=${action.href}>${t(this.localize, action.label)}</a>`;
+    return next ? nothing : html`<span class="later">${t(this.localize, "overview.later")}</span>`;
   }
 
   override render() {
@@ -284,9 +285,7 @@ export class OrtusAdminOverview extends LitElement {
               </div>
               ${step.state === "done"
                 ? html`<span class="badge">${t(this.localize, "overview.done")}</span>`
-                : step.state === "next"
-                  ? this.action(step.id)
-                  : html`<span class="later">${t(this.localize, "overview.later")}</span>`}
+                : this.action(step.id, step.state === "next")}
             </li>`,
           )}
         </ol>
