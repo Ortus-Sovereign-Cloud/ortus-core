@@ -145,8 +145,24 @@ fn app_passwords(store: Arc<dyn AsyncStore>) {
         "10.0.0.6"
     ))
     .is_ok());
+    // An account past its end date signs in no more, with app passwords too.
     block_on(instance.store.execute(
-        "UPDATE core_users SET state = 'suspended' WHERE email = 'olena@ministry.example'",
+        "UPDATE core_users SET expires_at = 1 WHERE email = 'olena@ministry.example'",
+        &[],
+    ))
+    .unwrap();
+    assert_eq!(
+        Err(Refused::Wrong),
+        block_on(authenticate(
+            &instance,
+            "olena@ministry.example",
+            phone,
+            "10.0.0.7"
+        ))
+        .map(|u| u.id)
+    );
+    block_on(instance.store.execute(
+        "UPDATE core_users SET expires_at = NULL, state = 'suspended' WHERE email = 'olena@ministry.example'",
         &[],
     ))
     .unwrap();

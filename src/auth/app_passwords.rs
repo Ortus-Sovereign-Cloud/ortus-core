@@ -53,7 +53,12 @@ pub async fn authenticate(
     client: &str,
 ) -> Result<User, Refused> {
     let store = instance.store.as_ref();
-    let keys = limits::keys(email, client);
+    // Their own counters: a phone's tries neither lock nor unlock the
+    // web sign-in of the same person.
+    let keys = vec![
+        format!("app:{}", email.trim().to_lowercase()),
+        format!("app-ip:{client}"),
+    ];
     for key in &keys {
         if let Ok(Some(until)) = limits::blocked_until(store, key, now_ms()).await {
             return Err(Refused::Blocked(until));
@@ -69,25 +74,26 @@ pub async fn authenticate(
         .await
         .ok()
         .flatten()
-        .filter(|u| u.state == State::Active);
-    let mut found = None;
-    match &user {
-        Some(user) => {
-            for credential in credentials::of_kind(store, &user.id, &Kind::AppPassword)
-                .await
-                .unwrap_or_default()
-            {
-                if credentials::password_matches(
-                    &typed,
-                    credential.data["hash"].as_str().unwrap_or_default(),
-                ) {
-                    found = Some(credential);
-                    break;
-                }
-            }
+        .filter(|u| u.state == State::Active && u.expires_at.is_none_or(|at| at > now_ms()));
+    let candidates = match &user {
+        Some(user) => credentials::of_kind(store, &user.id, &Kind::AppPassword)
+            .await
+            .unwrap_or_default(),
+        None => Vec::new(),
+    };
+    // Argon2 is slow on purpose: off the async workers.
+    let found = tokio::task::spawn_blocking(move || {
+        if candidates.is_empty() {
+            credentials::waste_a_password_check(&typed);
+            return None;
         }
-        None => credentials::waste_a_password_check(&typed),
-    }
+        candidates.into_iter().find(|c| {
+            credentials::password_matches(&typed, c.data["hash"].as_str().unwrap_or_default())
+        })
+    })
+    .await
+    .ok()
+    .flatten();
     let (Some(user), Some(credential)) = (user, found) else {
         super::audit(
             instance,
