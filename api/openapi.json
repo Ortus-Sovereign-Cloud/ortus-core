@@ -309,6 +309,90 @@
         ]
       }
     },
+    "/api/v1/admin/holds": {
+      "post": {
+        "description": "For owners.",
+        "operationId": "placeHold",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Place a legal hold: {case_ref, note, people (addresses), channels (app ids)}. Nothing they hold is removed until it is released.",
+        "tags": [
+          "retention"
+        ]
+      }
+    },
+    "/api/v1/admin/holds/:id/release": {
+      "post": {
+        "description": "For owners.",
+        "operationId": "releaseHold",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Release a legal hold.",
+        "tags": [
+          "retention"
+        ]
+      }
+    },
     "/api/v1/admin/oidc/clients": {
       "get": {
         "description": "For administrators and owners.",
@@ -722,6 +806,90 @@
         "summary": "Remove a partner organisation.",
         "tags": [
           "policy"
+        ]
+      }
+    },
+    "/api/v1/admin/retention": {
+      "get": {
+        "description": "For administrators and owners.",
+        "operationId": "getRetention",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "How long each kind is kept (days, or null for ever) and the legal holds.",
+        "tags": [
+          "retention"
+        ]
+      }
+    },
+    "/api/v1/admin/retention/:kind": {
+      "put": {
+        "description": "For owners.",
+        "operationId": "setRetention",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Set how long a kind (mail, chat, recordings, files, deleted) is kept: {days} (null for ever).",
+        "tags": [
+          "retention"
         ]
       }
     },

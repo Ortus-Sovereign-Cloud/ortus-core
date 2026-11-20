@@ -22,6 +22,7 @@ pub mod mail_out;
 pub mod oidc;
 pub mod policy;
 pub mod program;
+pub mod retention;
 pub mod runtime;
 pub mod services;
 pub mod storage;
@@ -51,6 +52,7 @@ pub fn schemas() -> Vec<storage::Schema> {
         auth::policy::SCHEMA,
         auth::personal::SCHEMA,
         policy::SCHEMA,
+        retention::SCHEMA,
         audit::SCHEMA,
         oidc::SCHEMA,
         auth::external::SCHEMA,
@@ -64,11 +66,15 @@ pub fn core_jobs(instance: &Arc<Instance>) -> Vec<app::JobKind> {
         .into_iter()
         .collect();
     all.push(auth::signup::expiry_job(Arc::clone(instance)));
+    all.push(retention::sweep_job(Arc::clone(instance)));
     all
 }
 
 /// Jobs the core runs on a schedule: (kind, every so many milliseconds).
-pub const PERIODIC: &[(&str, i64)] = &[(auth::signup::EXPIRY_JOB, 60 * 60 * 1000)];
+pub const PERIODIC: &[(&str, i64)] = &[
+    (auth::signup::EXPIRY_JOB, 60 * 60 * 1000),
+    (retention::SWEEP_JOB, 24 * 60 * 60 * 1000),
+];
 
 /// The web application of an installation: the public API and the web
 /// client of the core and its apps, with a request id on every request.

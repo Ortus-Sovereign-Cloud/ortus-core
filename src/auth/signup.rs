@@ -370,7 +370,7 @@ async fn expire(tx: &mut dyn AsyncTx, ortus: &Instance, now: i64) -> Result<(), 
     }
     let rows = tx
         .query(
-            "SELECT id FROM core_users WHERE (expires_at IS NOT NULL AND expires_at <= $1) OR (state = 'unverified' AND created_at <= $2) ORDER BY id LIMIT 100",
+            &format!("SELECT id FROM core_users WHERE ((expires_at IS NOT NULL AND expires_at <= $1) OR (state = 'unverified' AND created_at <= $2)) AND id NOT IN ({}) ORDER BY id LIMIT 100", crate::retention::PERSON_HELD_SQL),
             &[now.into(), (now - DAY_MS).into()],
         )
         .await

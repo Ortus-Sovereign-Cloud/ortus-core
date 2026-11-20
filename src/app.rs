@@ -105,6 +105,17 @@ pub trait App: Send + Sync + 'static {
     /// Offers services to other apps, once at start.
     fn provide(&self, _instance: &Arc<Instance>, _services: &Services) {}
 
+    /// The daily retention sweep: removes what is past its period and on
+    /// no hold (`rules.may_purge`), through `tx` only (files go by queuing
+    /// jobs in `tx`), and answers how many things went.
+    fn purge<'a>(
+        &'a self,
+        _tx: &'a mut dyn AsyncTx,
+        _rules: &'a crate::retention::Rules,
+    ) -> BoxFuture<'a, Result<u64, String>> {
+        Box::pin(async { Ok(0) })
+    }
+
     /// Deletes everything the app keeps for an account that is being
     /// deleted (an expired demo account, or an administrator's deletion).
     /// It works through `tx`, the deletion's own transaction, and must not

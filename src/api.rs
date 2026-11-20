@@ -592,6 +592,7 @@ pub fn routes() -> Vec<Route> {
     all.extend(crate::first_run::routes());
     all.extend(crate::auth::personal::routes());
     all.extend(crate::policy::routes());
+    all.extend(crate::retention::routes());
     all
 }
 
