@@ -29,6 +29,7 @@ const pl: Messages = {
   "setup.check": "Sprawdź imię i adres e-mail.",
   "setup.failed": "Coś poszło nie tak. Spróbuj ponownie.",
   "signIn.title": "Zaloguj się do Ortus",
+  "settings.signOut": "Wyloguj się",
   "accept.title": "Twoje zaproszenie",
   "accept.working": "Logowanie…",
   "accept.expired": "To zaproszenie wygasło lub zostało już użyte. Poproś osobę zapraszającą o nowe.",

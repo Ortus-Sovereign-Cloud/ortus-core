@@ -29,6 +29,7 @@ const ar: Messages = {
   "setup.check": "تحقق من اسمك وعنوان بريدك.",
   "setup.failed": "حدث خطأ ما. حاول مرة أخرى.",
   "signIn.title": "تسجيل الدخول إلى Ortus",
+  "settings.signOut": "تسجيل الخروج",
   "accept.title": "دعوتك",
   "accept.working": "جارٍ تسجيل دخولك…",
   "accept.expired": "انتهت صلاحية هذه الدعوة أو استُخدمت من قبل. اطلب دعوة جديدة ممن دعاك.",

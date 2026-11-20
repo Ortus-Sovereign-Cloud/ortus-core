@@ -92,6 +92,9 @@ test.describe("with a test mail server", () => {
     await expect(marek.getByRole("heading", { name: pl["settings.title"] as string })).toBeVisible();
     await marek.reload();
     await expect(marek.locator("html")).toHaveAttribute("lang", "pl");
+
+    await marek.getByRole("button", { name: pl["settings.signOut"] as string }).click();
+    await expect(marek).toHaveURL(/\/sign-in$/);
   });
 
   for (const locale of LOCALES) {

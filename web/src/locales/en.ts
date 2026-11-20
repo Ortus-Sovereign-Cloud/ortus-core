@@ -30,6 +30,7 @@ const en = {
   "setup.check": "Check your name and email address.",
   "setup.failed": "Something went wrong. Try again.",
   "signIn.title": "Sign in to Ortus",
+  "settings.signOut": "Sign out",
   "accept.title": "Your invitation",
   "accept.working": "Signing you in…",
   "accept.expired": "This invitation has expired or was already used. Ask whoever invited you for a new one.",

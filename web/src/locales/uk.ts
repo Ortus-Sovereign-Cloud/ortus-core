@@ -29,6 +29,7 @@ const uk: Messages = {
   "setup.check": "Перевірте ім’я та адресу пошти.",
   "setup.failed": "Щось пішло не так. Спробуйте ще раз.",
   "signIn.title": "Увійти до Ortus",
+  "settings.signOut": "Вийти",
   "accept.title": "Ваше запрошення",
   "accept.working": "Виконуємо вхід…",
   "accept.expired": "Це запрошення застаріло або вже використане. Попросіть нове в того, хто вас запросив.",

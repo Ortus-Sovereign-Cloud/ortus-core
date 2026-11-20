@@ -1,7 +1,7 @@
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { LocalizeController } from "@lit-material/core/localize.js";
-import { call, type Me } from "../api.js";
+import { call, signOut, type Me } from "../api.js";
 import { LOCALES, pickLocale, setLocale, t } from "../i18n.js";
 import type { MessageKey } from "../locales/en.js";
 import { TEXT_SIZES, loadPreferences, savePreferences, type Preferences } from "../preferences.js";
@@ -147,8 +147,16 @@ export class OrtusSettings extends LitElement {
         color: var(--ortus-text-2);
         font-size: 14px;
       }
-      a.button {
+      a.button,
+      button.danger {
         margin-block-start: 8px;
+      }
+      .card .button {
+        margin-inline-end: 8px;
+      }
+      button.danger {
+        border-color: rgba(255, 122, 110, 0.6);
+        color: var(--ortus-red);
       }
       .status {
         margin: 8px 0 0;
@@ -193,6 +201,11 @@ export class OrtusSettings extends LitElement {
     await call("PUT", "/me/profile", { name });
     if (this.me) this.me = { ...this.me, name };
     this.saved = "settings.saved";
+  }
+
+  private async signOutHere(): Promise<void> {
+    await signOut();
+    location.assign("/sign-in");
   }
 
   private async signOut(device: Device): Promise<void> {
@@ -267,6 +280,7 @@ export class OrtusSettings extends LitElement {
             <button class="button">${t(this.localize, "settings.saveName")}</button>
           </form>
           <a class="button" href="/settings/security">${t(this.localize, "settings.security")}</a>
+          <button class="button danger" @click=${this.signOutHere}>${t(this.localize, "settings.signOut")}</button>
         </section>
       </div>
     `;

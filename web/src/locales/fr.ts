@@ -29,6 +29,7 @@ const fr: Messages = {
   "setup.check": "Vérifiez votre nom et votre adresse e-mail.",
   "setup.failed": "Une erreur s’est produite. Réessayez.",
   "signIn.title": "Se connecter à Ortus",
+  "settings.signOut": "Se déconnecter",
   "accept.title": "Votre invitation",
   "accept.working": "Connexion en cours…",
   "accept.expired": "Cette invitation a expiré ou a déjà servi. Demandez-en une nouvelle à la personne qui vous a invité.",

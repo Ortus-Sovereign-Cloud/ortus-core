@@ -29,6 +29,7 @@ const de: Messages = {
   "setup.check": "Prüfen Sie Ihren Namen und Ihre E-Mail-Adresse.",
   "setup.failed": "Etwas ist schiefgelaufen. Versuchen Sie es erneut.",
   "signIn.title": "Bei Ortus anmelden",
+  "settings.signOut": "Abmelden",
   "accept.title": "Ihre Einladung",
   "accept.working": "Sie werden angemeldet…",
   "accept.expired": "Diese Einladung ist abgelaufen oder wurde schon benutzt. Bitten Sie um eine neue.",
