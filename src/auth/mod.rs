@@ -7,11 +7,13 @@
 //! never say yes), so no other site can act for a signed-in person.
 
 pub mod accounts;
+pub mod cbor;
 pub mod credentials;
 pub mod limits;
 pub mod routes;
 pub mod sessions;
 pub mod setup;
+pub mod webauthn;
 
 use std::sync::Arc;
 

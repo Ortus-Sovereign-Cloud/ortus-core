@@ -29,6 +29,7 @@ on_both_engines!(
     wrong_migration_lists_are_refused,
     programs_starting_together_migrate_once,
     more_transactions_than_connections_all_finish,
+    a_commit_after_a_failed_statement_fails,
 );
 
 const NOTES: Migration = Migration { version: 1, name: "notes", sql: "CREATE TABLE notes (id BIGINT PRIMARY KEY, title TEXT NOT NULL, body {{blob}}, pinned BIGINT)" };
@@ -248,4 +249,32 @@ fn more_transactions_than_connections_all_finish(db: &Fresh) {
             .len()
     );
     assert!(matches!(store.engine(), Engine::Sqlite | Engine::Postgres));
+}
+
+/// Code that catches an error inside a transaction and commits anyway gets
+/// an error on both engines, and nothing of the transaction is kept.
+fn a_commit_after_a_failed_statement_fails(db: &Fresh) {
+    let store = (db.open)();
+    migrate(store.as_ref(), "test", &[NOTES], 1).unwrap();
+    on(&*store)
+        .execute("INSERT INTO notes (id, title) VALUES (1, 'a')", &[])
+        .unwrap();
+    ortus_core::runtime::block_on(async {
+        let mut tx = store.begin().await.unwrap();
+        tx.execute("INSERT INTO notes (id, title) VALUES (2, 'b')", &[])
+            .await
+            .unwrap();
+        let again = tx
+            .execute("INSERT INTO notes (id, title) VALUES (1, 'c')", &[])
+            .await;
+        assert!(matches!(again, Err(StoreError::Conflict(_))), "{again:?}");
+        assert!(tx.commit().await.is_err());
+    });
+    let ids: Vec<i64> = on(&*store)
+        .query("SELECT id FROM notes ORDER BY id", &[])
+        .unwrap()
+        .iter()
+        .filter_map(|r| r.int(0))
+        .collect();
+    assert_eq!(vec![1], ids);
 }

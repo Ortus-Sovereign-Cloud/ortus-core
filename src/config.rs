@@ -85,7 +85,7 @@ pub struct Listener {
 }
 
 /// Where the database is.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum Database {
     Sqlite { file: PathBuf },
     Postgres { url: String, max_connections: usize },
@@ -98,7 +98,7 @@ pub enum FileStore {
     S3(S3Settings),
 }
 
-/// The settings of one program.
+/// The settings of one program. Its `Debug` output leaves secrets out.
 #[derive(Clone, Debug)]
 pub struct Config {
     pub roles: BTreeSet<Role>,
@@ -114,7 +114,53 @@ pub struct Config {
     pub apps_off: Vec<String>,
     /// The first-start token, when an automated install chooses it
     /// (`ORTUS_SETUP_TOKEN`, environment only); otherwise a random one.
-    pub setup_token: Option<String>,
+    pub setup_token: Option<Secret>,
+}
+
+impl fmt::Debug for Database {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Database::Sqlite { file } => f.debug_struct("Sqlite").field("file", file).finish(),
+            Database::Postgres {
+                url,
+                max_connections,
+            } => f
+                .debug_struct("Postgres")
+                .field("url", &redact_url(url))
+                .field("max_connections", max_connections)
+                .finish(),
+        }
+    }
+}
+
+/// A secret setting, shown as `***` in `Debug` output.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Secret(pub String);
+
+impl Secret {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for Secret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("***")
+    }
+}
+
+/// A database URL with its password replaced by `***`.
+pub fn redact_url(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_string();
+    };
+    let Some((credentials, host)) = rest.rsplit_once('@') else {
+        return url.to_string();
+    };
+    match credentials.split_once(':') {
+        Some((user, _)) => format!("{scheme}://{user}:***@{host}"),
+        None => url.to_string(),
+    }
 }
 
 /// A configuration that cannot be used, with the setting at fault.
@@ -331,7 +377,7 @@ impl Config {
             database,
             files,
             apps_off,
-            setup_token: env("ORTUS_SETUP_TOKEN"),
+            setup_token: env("ORTUS_SETUP_TOKEN").map(Secret),
         })
     }
 
@@ -515,6 +561,27 @@ mod tests {
                 "roles = {roles}"
             );
         }
+    }
+
+    #[test]
+    fn secrets_stay_out_of_debug_output() {
+        let config = load(
+            None,
+            &[
+                ("ORTUS_DATABASE_URL", "postgres://ortus:hunter2@db/ortus"),
+                ("ORTUS_FILES_S3_ENDPOINT", "http://s3"),
+                ("ORTUS_FILES_S3_BUCKET", "b"),
+                ("ORTUS_FILES_S3_ACCESS_KEY", "key"),
+                ("ORTUS_FILES_S3_SECRET_KEY", "s3cret-value"),
+                ("ORTUS_SETUP_TOKEN", "setup-secret"),
+            ],
+        )
+        .unwrap();
+        let shown = format!("{config:?}");
+        for secret in ["hunter2", "s3cret-value", "setup-secret"] {
+            assert!(!shown.contains(secret), "{shown}");
+        }
+        assert!(shown.contains("postgres://ortus:***@db/ortus"), "{shown}");
     }
 
     #[test]

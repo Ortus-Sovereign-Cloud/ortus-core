@@ -60,8 +60,16 @@ pub async fn run_until(
     let instance = Instance::open(config, apps, now_ms()).await?;
     let config = &instance.config;
     if config.has(Role::Web) {
-        match crate::auth::setup::prepare(&instance, config.setup_token.as_deref(), false, now_ms())
-            .await
+        match crate::auth::setup::prepare(
+            &instance,
+            config
+                .setup_token
+                .as_ref()
+                .map(crate::config::Secret::as_str),
+            false,
+            now_ms(),
+        )
+        .await
         {
             Ok(Some(link)) => {
                 println!("ortus: setup: no account yet; create the first owner at {link}")
@@ -236,10 +244,20 @@ async fn run_worker(instance: Arc<Instance>, stopping: Arc<AtomicBool>) {
     let name = format!("worker-{host}-{}-{}", std::process::id(), now_ms());
     let worker = AppWorker::new(instance, &name);
     let idle = Duration::from_millis(500);
+    let mut last_report = 0i64;
     while !stopping.load(Ordering::SeqCst) {
         match worker.tick(now_ms()).await {
             Ok(true) => {}
-            Ok(false) | Err(_) => tokio::time::sleep(idle).await,
+            Ok(false) => tokio::time::sleep(idle).await,
+            Err(e) => {
+                // Said at most once a minute, so a lost database is seen in
+                // the log without flooding it.
+                if now_ms() - last_report > 60_000 {
+                    eprintln!("ortus: worker: {e}");
+                    last_report = now_ms();
+                }
+                tokio::time::sleep(idle).await;
+            }
         }
     }
 }

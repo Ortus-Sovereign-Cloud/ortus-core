@@ -36,3 +36,5 @@ argon2 = "0.5"
 hmac = "0.12"
 sha1 = "0.10"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+aws-lc-rs = "1.19"
+tokio-postgres-rustls = "0.13"

@@ -68,9 +68,20 @@ pub async fn run(name: &str, version: &str, apps: Vec<Arc<dyn App>>, args: &[Str
             };
             with_config(|config| async move {
                 let parent = Path::new(parent);
-                let name = dated_name(now_ms());
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                // Interrupted backups go first, so a full disk frees up.
+                prune(parent, usize::MAX).map_err(|e| e.to_string())?;
+                let mut name = dated_name(now_ms());
+                while parent.join(&name).exists() {
+                    // Two backups in one second: take the next second.
+                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                    name = dated_name(now_ms());
+                }
                 let partial = parent.join(format!("{name}.partial"));
-                take_backup(&config, &partial).await?;
+                if let Err(e) = take_backup(&config, &partial).await {
+                    let _ = std::fs::remove_dir_all(&partial);
+                    return Err(e);
+                }
                 std::fs::rename(&partial, parent.join(&name)).map_err(|e| e.to_string())?;
                 let removed = prune(parent, keep).map_err(|e| e.to_string())?;
                 if removed > 0 {
@@ -113,7 +124,7 @@ pub async fn run(name: &str, version: &str, apps: Vec<Arc<dyn App>>, args: &[Str
         .await,
         ["setup-link"] => with_config(|config| async move {
             let instance = crate::instance::Instance::open(config, apps, now_ms()).await?;
-            match crate::auth::setup::prepare(&instance, instance.config.setup_token.as_deref(), true, now_ms())
+            match crate::auth::setup::prepare(&instance, instance.config.setup_token.as_ref().map(crate::config::Secret::as_str), true, now_ms())
                 .await
                 .map_err(|e| e.to_string())?
             {
@@ -145,6 +156,13 @@ async fn take_backup(config: &Config, dir: &Path) -> Result<(), String> {
         .await
         .map_err(|e| e.to_string())?;
     let rows: u64 = manifest.tables.iter().map(|t| t.rows).sum();
+    if !manifest.files.skipped.is_empty() {
+        eprintln!(
+            "ortus: warning: {} files were deleted while the backup ran and are not in it: {}",
+            manifest.files.skipped.len(),
+            manifest.files.skipped.join(", ")
+        );
+    }
     println!(
         "ortus: backup of {} written to {}: {} tables, {rows} rows, {} files ({} bytes)",
         manifest.engine,

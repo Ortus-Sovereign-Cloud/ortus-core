@@ -40,8 +40,9 @@ impl std::error::Error for FilesError {}
 
 pub type FilesResult<T> = Result<T, FilesError>;
 
-/// Where an S3 store is and how to sign in to it.
-#[derive(Clone, Debug)]
+/// Where an S3 store is and how to sign in to it. Its `Debug` output
+/// leaves the secret key out.
+#[derive(Clone)]
 pub struct S3Settings {
     /// Base URL of the store, for example `http://rustfs:9000`.
     pub endpoint: String,
@@ -52,6 +53,19 @@ pub struct S3Settings {
     /// Prefix inside the bucket that this installation owns; empty for the
     /// whole bucket.
     pub root: String,
+}
+
+impl fmt::Debug for S3Settings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("S3Settings")
+            .field("endpoint", &self.endpoint)
+            .field("bucket", &self.bucket)
+            .field("region", &self.region)
+            .field("access_key", &self.access_key)
+            .field("secret_key", &"***")
+            .field("root", &self.root)
+            .finish()
+    }
 }
 
 /// A place to keep file contents.

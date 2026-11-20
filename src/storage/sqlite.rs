@@ -55,9 +55,7 @@ impl SqliteStore {
         connection
             .pragma_update(None, "foreign_keys", "ON")
             .map_err(error)?;
-        connection
-            .busy_timeout(std::time::Duration::from_secs(5))
-            .map_err(error)?;
+        connection.busy_timeout(super::BUSY_LIMIT).map_err(error)?;
         let (commands, inbox) = channel::<Command>();
         std::thread::Builder::new()
             .name("ortus-sqlite".into())
@@ -170,10 +168,16 @@ impl SqliteStore {
         &self,
         begin: fn(Reply<()>) -> Command,
     ) -> StoreResult<Box<dyn AsyncTransaction>> {
-        let turn = Arc::clone(&self.turn).lock_owned().await;
+        // One transaction at a time on the connection. Waiting this long
+        // means a transaction waits on itself (code that starts a second
+        // transaction while holding one): fail instead of hanging forever.
+        let turn = tokio::time::timeout(super::BUSY_LIMIT, Arc::clone(&self.turn).lock_owned())
+            .await
+            .map_err(|_| StoreError::Database(super::BUSY_MESSAGE.into()))?;
         let mut transaction = SqliteTransaction {
             commands: self.commands.clone(),
             open: false,
+            failed: false,
             _turn: turn,
         };
         transaction.ask(begin).await?;
@@ -185,6 +189,9 @@ impl SqliteStore {
 struct SqliteTransaction {
     commands: Sender<Command>,
     open: bool,
+    /// A statement failed: commit refuses, as PostgreSQL does, so code
+    /// behaves the same on both engines.
+    failed: bool,
     // Declared last: released after `Drop` has queued the rollback.
     _turn: OwnedMutexGuard<()>,
 }
@@ -206,8 +213,11 @@ impl AsyncTx for SqliteTransaction {
     ) -> BoxFuture<'a, StoreResult<u64>> {
         Box::pin(async move {
             let sql = dialect(sql, Engine::Sqlite);
-            self.ask(|reply| Command::Execute(sql, params.to_vec(), reply))
-                .await
+            let result = self
+                .ask(|reply| Command::Execute(sql, params.to_vec(), reply))
+                .await;
+            self.failed |= result.is_err();
+            result
         })
     }
 
@@ -218,8 +228,11 @@ impl AsyncTx for SqliteTransaction {
     ) -> BoxFuture<'a, StoreResult<Vec<Row>>> {
         Box::pin(async move {
             let sql = dialect(sql, Engine::Sqlite);
-            self.ask(|reply| Command::Query(sql, params.to_vec(), reply))
-                .await
+            let result = self
+                .ask(|reply| Command::Query(sql, params.to_vec(), reply))
+                .await;
+            self.failed |= result.is_err();
+            result
         })
     }
 }
@@ -227,6 +240,13 @@ impl AsyncTx for SqliteTransaction {
 impl AsyncTransaction for SqliteTransaction {
     fn commit(mut self: Box<Self>) -> BoxFuture<'static, StoreResult<()>> {
         Box::pin(async move {
+            if self.failed {
+                self.open = false;
+                self.ask(|reply| Command::Rollback(Some(reply))).await?;
+                return Err(StoreError::Database(
+                    "a statement in the transaction failed, so nothing was committed".into(),
+                ));
+            }
             let result = self.ask(Command::Commit).await;
             if result.is_ok() {
                 self.open = false;

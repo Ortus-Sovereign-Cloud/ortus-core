@@ -104,6 +104,11 @@ pub struct FilesEntry {
     pub bytes: u64,
     /// SHA-256 of `files.jsonl`.
     pub sha256: String,
+    /// Files listed at the start that were gone when their turn came
+    /// (deleted while the backup ran). Rows taken earlier may still name
+    /// them.
+    #[serde(default)]
+    pub skipped: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -322,9 +327,11 @@ pub async fn backup(
 
     let mut listing = String::new();
     let (mut count, mut bytes) = (0u64, 0u64);
+    let mut skipped = Vec::new();
     for key in files.list("").await? {
         let Some(contents) = files.get(&key).await? else {
-            continue; // deleted since it was listed
+            skipped.push(key);
+            continue;
         };
         let path = dir.join("files").join(&key);
         if let Some(parent) = path.parent() {
@@ -356,6 +363,7 @@ pub async fn backup(
             count,
             bytes,
             sha256: sha256(listing.as_bytes()),
+            skipped,
         },
     };
     let path = dir.join("manifest.json");
@@ -503,6 +511,13 @@ pub async fn restore(
     let mut target = tables(&mut *tx, engine).await?;
     target.sort();
     let order = load_order(&mut *tx, engine, &target).await?;
+    // A row may refer to a row of its own table that comes later in the
+    // file; such keys are declared deferrable (see the storage rules) and
+    // checked at commit.
+    match engine {
+        Engine::Sqlite => tx.execute("PRAGMA defer_foreign_keys = ON", &[]).await?,
+        Engine::Postgres => tx.execute("SET CONSTRAINTS ALL DEFERRED", &[]).await?,
+    };
     tx.execute("DELETE FROM ortus_migrations", &[]).await?;
     for name in order {
         let Some(table) = checked.manifest.tables.iter().find(|t| t.name == name) else {

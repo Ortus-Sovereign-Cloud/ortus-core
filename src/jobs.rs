@@ -97,19 +97,16 @@ pub async fn enqueue(store: &dyn AsyncStore, job: &NewJob<'_>, now_ms: i64) -> S
 /// Adds a job inside the caller's transaction, so the job exists exactly
 /// when the caller's other writes do.
 pub async fn enqueue_in(tx: &mut dyn AsyncTx, job: &NewJob<'_>, now_ms: i64) -> StoreResult<bool> {
-    if !tx
-        .query("SELECT id FROM ortus_jobs WHERE id = $1", &[job.id.into()])
-        .await?
-        .is_empty()
-    {
-        return Ok(false);
-    }
-    tx.execute(
-        "INSERT INTO ortus_jobs (id, kind, payload, state, run_at, attempts, max_attempts, created_at) VALUES ($1, $2, $3, 'queued', $4, 0, $5, $6)",
-        &[job.id.into(), job.kind.into(), job.payload.into(), job.run_at.into(), job.max_attempts.max(1).into(), now_ms.into()],
-    )
-    .await?;
-    Ok(true)
+    // ON CONFLICT: two callers adding the same id at once add one job and
+    // neither fails (a failed statement would spoil the caller's
+    // transaction).
+    let added = tx
+        .execute(
+            "INSERT INTO ortus_jobs (id, kind, payload, state, run_at, attempts, max_attempts, created_at) VALUES ($1, $2, $3, 'queued', $4, 0, $5, $6) ON CONFLICT (id) DO NOTHING",
+            &[job.id.into(), job.kind.into(), job.payload.into(), job.run_at.into(), job.max_attempts.max(1).into(), now_ms.into()],
+        )
+        .await?;
+    Ok(added == 1)
 }
 
 /// The state of a job, or `None` when there is no job with this id.
@@ -147,11 +144,24 @@ pub async fn claim(
     // look again.
     for _ in 0..8 {
         let mut tx = store.begin().await?;
-        let candidates = tx.query(&format!("SELECT id, kind, payload, attempts, max_attempts FROM ortus_jobs WHERE {DUE} ORDER BY run_at, id LIMIT 32"), &[now_ms.into()]).await?;
-        let Some(row) = candidates
-            .iter()
-            .find(|row| kinds.is_empty() || kinds.contains(&row.text(1).unwrap_or_default()))
-        else {
+        // The kinds are filtered in the query: due jobs of kinds this
+        // worker does not run must never hide the ones it does.
+        let mut params: Vec<Value> = vec![now_ms.into()];
+        let filter = if kinds.is_empty() {
+            String::new()
+        } else {
+            let marks: Vec<String> = kinds
+                .iter()
+                .enumerate()
+                .map(|(i, kind)| {
+                    params.push((*kind).into());
+                    format!("${}", i + 2)
+                })
+                .collect();
+            format!(" AND kind IN ({})", marks.join(", "))
+        };
+        let candidates = tx.query(&format!("SELECT id, kind, payload, attempts, max_attempts FROM ortus_jobs WHERE {DUE}{filter} ORDER BY run_at, id LIMIT 1"), &params).await?;
+        let Some(row) = candidates.first() else {
             tx.commit().await?;
             return Ok(None);
         };
@@ -221,7 +231,9 @@ pub async fn fail(
 }
 
 /// What a handler does with a job. Its database writes go through the
-/// transaction and commit together with the job's completion.
+/// transaction and commit together with the job's completion. A handler
+/// must not start another transaction on the store (or call anything that
+/// does) while it runs: on SQLite that waits on the job's own transaction.
 pub type Handler = Box<
     dyn for<'a> Fn(&'a Job, &'a mut dyn AsyncTx) -> BoxFuture<'a, Result<(), String>> + Send + Sync,
 >;

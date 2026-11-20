@@ -15,7 +15,8 @@ const NOTES: &[Migration] = &[
         version: 1,
         name: "notes",
         sql: "CREATE TABLE test_folders (id TEXT PRIMARY KEY, name TEXT NOT NULL);
-              CREATE TABLE test_notes (id BIGINT PRIMARY KEY, folder TEXT NOT NULL REFERENCES test_folders (id), body TEXT, data {{blob}})",
+              CREATE TABLE test_notes (id BIGINT PRIMARY KEY, folder TEXT NOT NULL REFERENCES test_folders (id), body TEXT, data {{blob}});
+              CREATE TABLE test_replies (id BIGINT PRIMARY KEY, parent BIGINT REFERENCES test_replies (id) DEFERRABLE INITIALLY DEFERRED)",
     },
     Migration {
         version: 2,
@@ -95,6 +96,21 @@ fn fill(shape: &Shape) {
                 .unwrap();
         }
     });
+    block_on(async {
+        // A reply refers to one inserted after it: in the backup the child
+        // can come first.
+        let mut tx = store.begin().await.unwrap();
+        tx.execute("INSERT INTO test_replies (id, parent) VALUES (1, 2)", &[])
+            .await
+            .unwrap();
+        tx.execute(
+            "INSERT INTO test_replies (id, parent) VALUES (2, NULL)",
+            &[],
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+    });
     shape.files.put("drive/ab/one", b"first file").unwrap();
     shape.files.put("mail/raw/2", &[0u8, 1, 2, 255]).unwrap();
     shape.files.put("empty", b"").unwrap();
@@ -136,6 +152,12 @@ fn round_trip(from: Shape, to: Shape) {
     .unwrap();
 
     assert_eq!(notes(&from), notes(&to));
+    let replies = block_on(
+        to.store
+            .query("SELECT id, parent FROM test_replies ORDER BY id", &[]),
+    )
+    .unwrap();
+    assert_eq!(2, replies.len());
     assert_eq!(3, notes(&to).len());
     assert_eq!(from.files.list("").unwrap(), to.files.list("").unwrap());
     assert_eq!(

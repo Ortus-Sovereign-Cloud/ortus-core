@@ -27,6 +27,7 @@ on_both_engines!(
     a_failed_handler_leaves_no_writes_behind,
     many_workers_run_every_job_once,
     a_job_enqueued_in_a_rolled_back_transaction_does_not_exist,
+    jobs_of_other_kinds_never_hide_a_workers_jobs,
 );
 
 fn job<'a>(id: &'a str, kind: &'a str) -> NewJob<'a> {
@@ -313,4 +314,22 @@ fn a_job_enqueued_in_a_rolled_back_transaction_does_not_exist(db: &Fresh) {
     assert!(result.is_err());
     assert_eq!(None, state(store.as_ref(), "ghost").unwrap());
     assert!(!tick(&counting_worker("w"), store.as_ref(), 10).unwrap());
+}
+
+fn jobs_of_other_kinds_never_hide_a_workers_jobs(db: &Fresh) {
+    let store = open(db);
+    // Many older due jobs that this worker has no handler for.
+    for i in 0..50 {
+        let id = format!("other-{i:02}");
+        assert!(enqueue(store.as_ref(), &job(&id, "someone-else"), 0).unwrap());
+    }
+    let mut mine = job("mine", "count");
+    mine.run_at = 1;
+    assert!(enqueue(store.as_ref(), &mine, 0).unwrap());
+    assert!(tick(&counting_worker("w"), store.as_ref(), 10).unwrap());
+    assert_eq!(Some(JobState::Done), state(store.as_ref(), "mine").unwrap());
+    assert_eq!(
+        Some(JobState::Queued),
+        state(store.as_ref(), "other-00").unwrap()
+    );
 }

@@ -48,11 +48,218 @@ impl PostgresStore {
 }
 
 async fn open(url: &str) -> StoreResult<Client> {
-    let (client, connection) = tokio_postgres::connect(url, NoTls).await.map_err(error)?;
-    // The connection does its work on the process-wide runtime, so it
-    // stays usable whichever runtime the caller is on.
-    runtime::io().spawn(connection);
+    let settings = tls::Settings::from_url(url).map_err(StoreError::Database)?;
+    let config: tokio_postgres::Config = settings.url.parse().map_err(error)?;
+    let client = if settings.mode == tls::Mode::Disable {
+        let (client, connection) = config.connect(NoTls).await.map_err(error)?;
+        // The connection does its work on the process-wide runtime, so it
+        // stays usable whichever runtime the caller is on.
+        runtime::io().spawn(connection);
+        client
+    } else {
+        let mut config = config;
+        config.ssl_mode(if settings.mode == tls::Mode::Prefer {
+            tokio_postgres::config::SslMode::Prefer
+        } else {
+            tokio_postgres::config::SslMode::Require
+        });
+        let connector = tokio_postgres_rustls::MakeRustlsConnect::new(
+            settings.client_config().map_err(StoreError::Database)?,
+        );
+        let (client, connection) = config.connect(connector).await.map_err(error)?;
+        runtime::io().spawn(connection);
+        client
+    };
     Ok(client)
+}
+
+/// TLS to PostgreSQL, set in the URL as libpq does:
+///
+/// - `sslmode=disable`: never.
+/// - `sslmode=prefer` (the default): when the server offers it, without
+///   checking its certificate (it protects against eavesdropping, not
+///   against someone in the middle).
+/// - `sslmode=require`: always; the certificate is checked only when
+///   `sslrootcert` names a CA file.
+/// - `sslmode=verify-ca` and `verify-full`: always, and the certificate
+///   must chain to `sslrootcert` (or a public authority) and name the host.
+pub(crate) mod tls {
+    use std::sync::Arc;
+
+    use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+    use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+    use rustls::{DigitallySignedStruct, SignatureScheme};
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Mode {
+        Disable,
+        Prefer,
+        Require,
+        Verify,
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    pub struct Settings {
+        /// The URL without the options handled here.
+        pub url: String,
+        pub mode: Mode,
+        pub root_cert: Option<String>,
+    }
+
+    impl Settings {
+        pub fn from_url(url: &str) -> Result<Self, String> {
+            let (base, query) = url.split_once('?').unwrap_or((url, ""));
+            let mut mode = Mode::Prefer;
+            let mut root_cert = None;
+            let mut rest = Vec::new();
+            for pair in query.split('&').filter(|p| !p.is_empty()) {
+                match pair.split_once('=') {
+                    Some(("sslmode", value)) => {
+                        mode = match value {
+                            "disable" => Mode::Disable,
+                            "allow" | "prefer" => Mode::Prefer,
+                            "require" => Mode::Require,
+                            "verify-ca" | "verify-full" => Mode::Verify,
+                            other => return Err(format!("sslmode '{other}' is not one of disable, prefer, require, verify-ca, verify-full")),
+                        }
+                    }
+                    Some(("sslrootcert", value)) => root_cert = Some(value.replace("%2F", "/").replace("%2f", "/")),
+                    _ => rest.push(pair),
+                }
+            }
+            let url = if rest.is_empty() {
+                base.to_string()
+            } else {
+                format!("{base}?{}", rest.join("&"))
+            };
+            Ok(Self {
+                url,
+                mode,
+                root_cert,
+            })
+        }
+
+        pub fn client_config(&self) -> Result<rustls::ClientConfig, String> {
+            let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+            let builder = rustls::ClientConfig::builder_with_provider(Arc::clone(&provider))
+                .with_safe_default_protocol_versions()
+                .map_err(|e| e.to_string())?;
+            let verify = self.mode == Mode::Verify
+                || (self.mode == Mode::Require && self.root_cert.is_some());
+            if !verify {
+                return Ok(builder
+                    .dangerous()
+                    .with_custom_certificate_verifier(Arc::new(EncryptOnly(provider)))
+                    .with_no_client_auth());
+            }
+            let mut roots = rustls::RootCertStore::empty();
+            match &self.root_cert {
+                Some(path) => {
+                    let pem =
+                        std::fs::read(path).map_err(|e| format!("sslrootcert {path}: {e}"))?;
+                    for cert in rustls::pki_types::pem::PemObject::pem_slice_iter(&pem) {
+                        let cert: CertificateDer<'static> =
+                            cert.map_err(|e| format!("sslrootcert {path}: {e}"))?;
+                        roots
+                            .add(cert)
+                            .map_err(|e| format!("sslrootcert {path}: {e}"))?;
+                    }
+                }
+                None => roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned()),
+            }
+            Ok(builder.with_root_certificates(roots).with_no_client_auth())
+        }
+    }
+
+    /// Accepts the server's certificate without checking who issued it,
+    /// but still checks the handshake signatures: the connection is
+    /// encrypted, as libpq's `require` without a root certificate.
+    #[derive(Debug)]
+    struct EncryptOnly(Arc<rustls::crypto::CryptoProvider>);
+
+    impl ServerCertVerifier for EncryptOnly {
+        fn verify_server_cert(
+            &self,
+            _: &CertificateDer<'_>,
+            _: &[CertificateDer<'_>],
+            _: &ServerName<'_>,
+            _: &[u8],
+            _: UnixTime,
+        ) -> Result<ServerCertVerified, rustls::Error> {
+            Ok(ServerCertVerified::assertion())
+        }
+
+        fn verify_tls12_signature(
+            &self,
+            message: &[u8],
+            cert: &CertificateDer<'_>,
+            dss: &DigitallySignedStruct,
+        ) -> Result<HandshakeSignatureValid, rustls::Error> {
+            rustls::crypto::verify_tls12_signature(
+                message,
+                cert,
+                dss,
+                &self.0.signature_verification_algorithms,
+            )
+        }
+
+        fn verify_tls13_signature(
+            &self,
+            message: &[u8],
+            cert: &CertificateDer<'_>,
+            dss: &DigitallySignedStruct,
+        ) -> Result<HandshakeSignatureValid, rustls::Error> {
+            rustls::crypto::verify_tls13_signature(
+                message,
+                cert,
+                dss,
+                &self.0.signature_verification_algorithms,
+            )
+        }
+
+        fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+            self.0.signature_verification_algorithms.supported_schemes()
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn ssl_options_are_read_from_the_url() {
+            let s = Settings::from_url("postgres://u:p@db/ortus").unwrap();
+            assert_eq!(
+                (Mode::Prefer, None, "postgres://u:p@db/ortus"),
+                (s.mode, s.root_cert.clone(), s.url.as_str())
+            );
+            let s = Settings::from_url("postgres://u:p@db/ortus?sslmode=verify-full&sslrootcert=%2Fetc%2Fca.pem&options=-c%20x").unwrap();
+            assert_eq!(Mode::Verify, s.mode);
+            assert_eq!(Some("/etc/ca.pem".to_string()), s.root_cert);
+            assert_eq!("postgres://u:p@db/ortus?options=-c%20x", s.url);
+            assert_eq!(
+                Mode::Disable,
+                Settings::from_url("postgres://db/x?sslmode=disable")
+                    .unwrap()
+                    .mode
+            );
+            assert!(Settings::from_url("postgres://db/x?sslmode=sometimes").is_err());
+            assert!(Settings::from_url("postgres://db/x?sslmode=require")
+                .unwrap()
+                .client_config()
+                .is_ok());
+            assert!(Settings::from_url("postgres://db/x?sslmode=verify-full")
+                .unwrap()
+                .client_config()
+                .is_ok());
+            assert!(Settings::from_url(
+                "postgres://db/x?sslmode=verify-full&sslrootcert=/nonexistent"
+            )
+            .unwrap()
+            .client_config()
+            .is_err());
+        }
+    }
 }
 
 impl AsyncStore for PostgresStore {
@@ -71,10 +278,13 @@ impl AsyncStore for PostgresStore {
 
 impl PostgresStore {
     async fn start_transaction(&self, begin: &str) -> StoreResult<Box<dyn AsyncTransaction>> {
-        let permit = Arc::clone(&self.pool.permits)
-            .acquire_owned()
-            .await
-            .map_err(|_| StoreError::Database("the connection pool is closed".into()))?;
+        let permit = tokio::time::timeout(
+            super::BUSY_LIMIT,
+            Arc::clone(&self.pool.permits).acquire_owned(),
+        )
+        .await
+        .map_err(|_| StoreError::Database(super::BUSY_MESSAGE.into()))?
+        .map_err(|_| StoreError::Database("the connection pool is closed".into()))?;
         let idle = self
             .pool
             .idle
@@ -90,6 +300,7 @@ impl PostgresStore {
             client: Some(client),
             pool: Arc::clone(&self.pool),
             _permit: permit,
+            failed: false,
         }) as Box<dyn AsyncTransaction>)
     }
 }
@@ -101,6 +312,9 @@ struct PostgresTransaction {
     client: Option<Client>,
     pool: Arc<Pool>,
     _permit: OwnedSemaphorePermit,
+    /// A statement failed: PostgreSQL has aborted the transaction, and a
+    /// COMMIT would quietly roll back, so commit reports the failure.
+    failed: bool,
 }
 
 impl PostgresTransaction {
@@ -132,10 +346,13 @@ impl AsyncTx for PostgresTransaction {
     ) -> BoxFuture<'a, StoreResult<u64>> {
         Box::pin(async move {
             let sql = dialect(sql, Engine::Postgres);
-            self.client()?
+            let result = self
+                .client()?
                 .execute(sql.as_str(), &refs(params))
                 .await
-                .map_err(error)
+                .map_err(error);
+            self.failed |= result.is_err();
+            result
         })
     }
 
@@ -146,11 +363,13 @@ impl AsyncTx for PostgresTransaction {
     ) -> BoxFuture<'a, StoreResult<Vec<Row>>> {
         Box::pin(async move {
             let sql = dialect(sql, Engine::Postgres);
-            let rows = self
+            let result = self
                 .client()?
                 .query(sql.as_str(), &refs(params))
                 .await
-                .map_err(error)?;
+                .map_err(error);
+            self.failed |= result.is_err();
+            let rows = result?;
             rows.iter().map(read_row).collect()
         })
     }
@@ -158,7 +377,15 @@ impl AsyncTx for PostgresTransaction {
 
 impl AsyncTransaction for PostgresTransaction {
     fn commit(self: Box<Self>) -> BoxFuture<'static, StoreResult<()>> {
-        Box::pin(self.end("COMMIT"))
+        Box::pin(async move {
+            if self.failed {
+                self.end("ROLLBACK").await?;
+                return Err(StoreError::Database(
+                    "a statement in the transaction failed, so nothing was committed".into(),
+                ));
+            }
+            self.end("COMMIT").await
+        })
     }
 
     fn rollback(self: Box<Self>) -> BoxFuture<'static, StoreResult<()>> {
@@ -225,8 +452,14 @@ impl ToSql for Value {
 }
 
 fn error(e: tokio_postgres::Error) -> StoreError {
+    // The server's own message says what went wrong; "db error" alone
+    // does not.
+    let message = match e.as_db_error() {
+        Some(db) => format!("{}: {}", db.code().code(), db.message()),
+        None => e.to_string(),
+    };
     match e.code() {
-        Some(code) if *code == SqlState::UNIQUE_VIOLATION => StoreError::Conflict(e.to_string()),
-        _ => StoreError::Database(e.to_string()),
+        Some(code) if *code == SqlState::UNIQUE_VIOLATION => StoreError::Conflict(message),
+        _ => StoreError::Database(message),
     }
 }
