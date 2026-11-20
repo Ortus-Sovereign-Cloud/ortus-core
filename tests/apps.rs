@@ -424,3 +424,40 @@ fn apps_that_do_not_fit_are_refused() {
     }
     assert!(app::check(&apps()).is_ok());
 }
+
+#[test]
+fn the_place_after_sign_in_is_the_chooser_once_then_the_last_app() {
+    let instance = testing::instance(apps());
+    let client = TestClient::new(ortus_core::app(Arc::clone(&instance)));
+    let auth = format!("Bearer {}", token(&instance));
+    let me = || {
+        json_of(
+            client
+                .get("/api/v1/me")
+                .header("Authorization", &auth)
+                .send()
+                .body_text(),
+        )
+    };
+    assert_eq!(
+        (false, Value::Null),
+        (
+            me()["chooser_seen"].as_bool().unwrap(),
+            me()["last_app"].clone()
+        )
+    );
+    let put = |body: &str| {
+        client
+            .put("/api/v1/me/place")
+            .header("Authorization", &auth)
+            .header("X-Requested-With", "ortus")
+            .body_text(body)
+            .send()
+    };
+    assert_eq!(200, put(r#"{"app": null}"#).status());
+    assert_eq!(true, me()["chooser_seen"]);
+    assert_eq!(200, put(r#"{"app": "notes"}"#).status());
+    assert_eq!("notes", me()["last_app"]);
+    assert_eq!(404, put(r#"{"app": "nothing"}"#).status());
+    assert_eq!("notes", me()["last_app"]);
+}

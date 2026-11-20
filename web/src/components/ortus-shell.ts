@@ -2,7 +2,7 @@ import { LitElement, css, html, nothing, svg } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { LocalizeController } from "@lit-material/core/localize.js";
-import { installedApps, type InstalledApp } from "../api.js";
+import { installedApps, setPlace, type InstalledApp } from "../api.js";
 import { LOCALES, setLocale, t } from "../i18n.js";
 import { APP_ICONS, tileTints } from "../icons.js";
 import type { MessageKey } from "../locales/en.js";
@@ -223,6 +223,11 @@ export class OrtusShell extends LitElement {
     this.failed = false;
     try {
       this.apps = await installedApps();
+      // Where the person is, so the next sign-in opens it again.
+      const path = location.pathname;
+      const app = this.current();
+      if (path === "/" || path === "/apps") void setPlace(null).catch(() => undefined);
+      else if (app) void setPlace(app.id).catch(() => undefined);
     } catch {
       this.apps = undefined;
       this.failed = true;

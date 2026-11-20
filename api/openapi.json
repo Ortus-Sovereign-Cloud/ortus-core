@@ -450,6 +450,56 @@
         ]
       }
     },
+    "/api/v1/me/place": {
+      "put": {
+        "description": "For anyone signed in.",
+        "operationId": "setMyPlace",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "app": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Record where the person is: {app: id} for the app they opened (opened again after sign-in), or {app: null} for the app chooser.",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
     "/api/v1/me/recovery-kit": {
       "post": {
         "description": "For anyone signed in.",

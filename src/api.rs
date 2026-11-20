@@ -328,6 +328,48 @@ fn session_schema() -> Value {
     json!({"type": "object", "required": ["user"], "properties": {"user": {"description": "The signed-in account, or null.", "oneOf": [user_schema(), {"type": "null"}]}}})
 }
 
+#[derive(serde::Deserialize)]
+struct Place {
+    /// The app opened, or null for the app chooser.
+    app: Option<String>,
+}
+
+/// Remembers where the person is: the chooser has been seen, and which
+/// app they opened last (the place to come back to after signing in).
+fn set_place(
+    request: Request,
+    _: PathParams,
+    _: ConnectionInfo,
+    ortus: Arc<Instance>,
+) -> BoxFuture<'static, Response> {
+    Box::pin(async move {
+        let Some(session) = crate::auth::current(&request, &ortus).await else {
+            return ApiError::sign_in().response(&request);
+        };
+        let place: Place = match body(&request) {
+            Ok(place) => place,
+            Err(e) => return e.response(&request),
+        };
+        use crate::auth::accounts::{set, Field};
+        let store = ortus.store.as_ref();
+        let result = match &place.app {
+            None => set(store, &session.user.id, Field::ChooserSeen).await,
+            Some(app) if ortus.app(app).is_some() => {
+                set(store, &session.user.id, Field::LastApp(Some(app))).await
+            }
+            Some(_) => return ApiError::not_installed("that").response(&request),
+        };
+        match result {
+            Ok(()) => ok(&json!({ "app": place.app })),
+            Err(_) => ApiError::internal().response(&request),
+        }
+    })
+}
+
+fn place_schema() -> Value {
+    json!({"type": "object", "properties": {"app": {"type": ["string", "null"]}}})
+}
+
 fn sign_out(
     request: Request,
     _: PathParams,
@@ -520,6 +562,16 @@ fn core_routes() -> Vec<Route> {
             access: crate::auth::Access::Public,
             response: signed_in_schema,
             handler: setup,
+        },
+        Route {
+            method: Method::Put,
+            path: "/me/place",
+            id: "setMyPlace",
+            tag: "accounts",
+            summary: "Record where the person is: {app: id} for the app they opened (opened again after sign-in), or {app: null} for the app chooser.",
+            access: crate::auth::Access::Signed,
+            response: place_schema,
+            handler: set_place,
         },
         Route {
             method: Method::Post,

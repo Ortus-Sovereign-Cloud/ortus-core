@@ -134,6 +134,11 @@ export async function verifySignUp(ticket: string, code: string): Promise<Me> {
   return call<Me>("POST", "/signup/verify", { ticket, code });
 }
 
+/** Records the app opened (or null for the app chooser). */
+export async function setPlace(app: string | null): Promise<void> {
+  await call("PUT", "/me/place", { app });
+}
+
 /** Where to go after signing in: the app used last, or the app chooser. */
 export function homeFor(me: Me): string {
   return me.chooser_seen && me.last_app ? `/${me.last_app}` : "/";
