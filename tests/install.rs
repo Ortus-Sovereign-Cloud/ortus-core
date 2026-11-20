@@ -207,6 +207,44 @@ fn a_second_start_on_the_same_data_finds_everything_in_place() {
 }
 
 #[test]
+fn dated_backups_keep_only_the_newest() {
+    let base = dir();
+    let data = base.0.join("data");
+    let backups = base.0.join("backups");
+    drop(serve(&data, "all"));
+    std::fs::create_dir_all(backups.join("20200101T000000Z.partial")).unwrap();
+    std::fs::create_dir_all(backups.join("20200101T000001Z")).unwrap();
+    std::fs::create_dir_all(backups.join("keep-me")).unwrap();
+    let output = run(
+        &data,
+        &["backup", "--into", backups.to_str().unwrap(), "--keep", "1"],
+    );
+    assert!(output.status.success(), "{}", text(&output));
+    assert!(
+        text(&output).contains("backup of sqlite"),
+        "{}",
+        text(&output)
+    );
+    let mut names: Vec<String> = std::fs::read_dir(&backups)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(2, names.len(), "{names:?}");
+    assert_eq!("keep-me", names[1]);
+    assert!(
+        names[0].starts_with("20") && names[0].ends_with('Z'),
+        "{names:?}"
+    );
+    assert!(backups.join(&names[0]).join("manifest.json").exists());
+    let output = run(
+        &data,
+        &["backup", "--into", backups.to_str().unwrap(), "--keep", "0"],
+    );
+    assert_eq!(Some(2), output.status.code());
+}
+
+#[test]
 fn the_command_line_explains_itself() {
     let base = dir();
     let data = base.0.join("data");
