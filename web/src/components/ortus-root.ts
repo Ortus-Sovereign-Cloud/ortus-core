@@ -46,7 +46,9 @@ export class OrtusRoot extends LitElement {
     }
     const needed = await setupNeeded().catch(() => false);
     const about = location.pathname === "/" ? await site().catch(() => undefined) : undefined;
-    if (about?.website && !needed) {
+    // With the website on (the demo), visitors always get the website at
+    // the root; the setup page is reached through its link only.
+    if (about?.website) {
       this.view = { kind: "website", signupOpen: about.signup_open };
     } else if (needed) {
       history.replaceState(null, "", "/setup");

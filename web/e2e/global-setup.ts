@@ -9,8 +9,8 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   const baseURL = config.projects[0]?.use.baseURL as string;
   const browser = await chromium.launch();
   const page = await browser.newPage({ baseURL });
-  await page.goto("/");
-  await expect(page).toHaveURL(/\/setup$/);
+  // The test server shows the project website at the root (as the demo
+  // does), so the owner comes in through the setup link.
   await page.goto(`/setup#${SETUP_TOKEN}`);
   await page.getByLabel("Your name").fill("Taras Bondar");
   await page.getByLabel("Work email").fill("taras@ministry.example");
