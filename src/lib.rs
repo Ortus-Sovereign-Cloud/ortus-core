@@ -20,6 +20,7 @@ pub mod instance;
 pub mod interfaces;
 pub mod jobs;
 pub mod mail_out;
+pub mod notify;
 pub mod oidc;
 pub mod outbound;
 pub mod policy;
@@ -64,6 +65,7 @@ pub fn schemas() -> Vec<storage::Schema> {
         auth::external::SCHEMA,
         auth::saml::SCHEMA,
         search::SCHEMA,
+        notify::SCHEMA,
     ]
 }
 

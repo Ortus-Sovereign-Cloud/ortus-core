@@ -157,7 +157,7 @@ test("a right-to-left language mirrors the layout", async ({ page }) => {
 
   // The language menu opens beside the rail, on its inner side.
   await page.locator("ortus-shell nav .language > button").click();
-  const menu = await box("ortus-shell [popover]");
+  const menu = await box("ortus-shell #languages");
   expect(menu.x + menu.width).toBeCloseTo(width - rail.width - 8, 0);
   // Each language is written in its own script and direction.
   await expect(page.locator('ortus-shell [role="menuitemradio"]')).toHaveText(LOCALES.map((locale) => locale.name));

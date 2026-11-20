@@ -12,6 +12,7 @@ import "./ortus-search.js";
 import "./ortus-settings.js";
 import "./ortus-welcome.js";
 import "./ortus-security.js";
+import "./ortus-notifications.js";
 
 /** How many apps the rail shows before "All apps". */
 const RAIL_APPS = 6;
@@ -294,6 +295,7 @@ export class OrtusShell extends LitElement {
           <span class="label">${t(this.localize, "shell.allAppsShort")}</span>
         </a>
         <span class="spacer"></span>
+        ${this.me ? html`<ortus-notifications></ortus-notifications>` : nothing}
         ${this.me
           ? html`<a class="item" href="/settings" aria-label=${t(this.localize, "settings.title")} aria-current=${location.pathname.startsWith("/settings") ? "page" : nothing}>
               <span class="avatar" aria-hidden="true">${initials(this.me.name)}</span>
