@@ -258,6 +258,14 @@ async fn verify(
         )
         .await?;
     accounts::set(store, &user_id, accounts::Field::State(State::Active)).await?;
+    super::audit(
+        ortus,
+        crate::audit::Event::new("auth.sign_up", crate::audit::Outcome::Done)
+            .by(&user_id)
+            .on(&user_id)
+            .from(&connection.client.ip),
+    )
+    .await;
     let user = accounts::by_id(store, &user_id)
         .await?
         .ok_or_else(ApiError::internal)?;
@@ -310,6 +318,15 @@ async fn expire(tx: &mut dyn AsyncTx, ortus: &Instance, now: i64) -> Result<(), 
                 .await
                 .map_err(|e| e.to_string())?;
         }
+        crate::audit::record_in(
+            tx,
+            &crate::audit::Event::new("auth.account_deleted", crate::audit::Outcome::Done)
+                .on(&id)
+                .with(json!({"reason": "expired"})),
+            now,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
         println!("ortus: deleted expired account {id} and its data");
     }
     Ok(())

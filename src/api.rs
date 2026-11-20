@@ -459,6 +459,14 @@ pub async fn signed_in_with(
     .await;
     match started {
         Ok(token) => {
+            crate::auth::audit(
+                ortus,
+                crate::audit::Event::new("auth.sign_in", crate::audit::Outcome::Done)
+                    .by(&user.id)
+                    .from(&connection.client.ip)
+                    .with(json!({ "methods": methods })),
+            )
+            .await;
             let mut body = user_json(user);
             body["session_token"] = json!(token);
             if let Value::Object(fields) = extra {
@@ -491,11 +499,42 @@ fn setup(
             Err(e) => return e.response(&request),
         };
         use crate::auth::setup::{create_owner, SetupError};
-        match create_owner(ortus.store.as_ref(), &body.token, &body.email, &body.name, crate::program::now_ms()).await {
-            Ok(user) => signed_in(&request, &connection, &ortus, &user, "setup").await,
-            Err(SetupError::Done) => ApiError::conflict("This installation already has its owner.").response(&request),
-            Err(SetupError::BadToken) => ApiError { status: 403, code: "bad_setup_token", message: "This setup link is not valid. Run `ortus setup-link` on the server for a new one.".into() }.response(&request),
-            Err(SetupError::BadEmail) => ApiError::bad_request("That is not an email address.").response(&request),
+        match create_owner(
+            ortus.store.as_ref(),
+            &body.token,
+            &body.email,
+            &body.name,
+            crate::program::now_ms(),
+        )
+        .await
+        {
+            Ok(user) => {
+                crate::auth::audit(
+                    &ortus,
+                    crate::audit::Event::new("auth.owner_created", crate::audit::Outcome::Done)
+                        .by(&user.id)
+                        .on(&user.id)
+                        .from(&connection.client.ip),
+                )
+                .await;
+                signed_in(&request, &connection, &ortus, &user, "setup").await
+            }
+            Err(SetupError::Done) => {
+                ApiError::conflict("This installation already has its owner.").response(&request)
+            }
+            Err(SetupError::BadToken) => {
+                crate::auth::audit(
+                    &ortus,
+                    crate::audit::Event::new("auth.owner_created", crate::audit::Outcome::Failed)
+                        .from(&connection.client.ip)
+                        .with(json!({"reason": "bad setup token"})),
+                )
+                .await;
+                ApiError { status: 403, code: "bad_setup_token", message: "This setup link is not valid. Run `ortus setup-link` on the server for a new one.".into() }.response(&request)
+            }
+            Err(SetupError::BadEmail) => {
+                ApiError::bad_request("That is not an email address.").response(&request)
+            }
             Err(SetupError::BadName) => ApiError::bad_request("Give a name.").response(&request),
             Err(SetupError::Store(_)) => ApiError::internal().response(&request),
         }
@@ -517,6 +556,7 @@ pub fn routes() -> Vec<Route> {
     all.extend(crate::auth::routes::routes());
     all.extend(crate::auth::passkeys::routes());
     all.extend(crate::auth::signup::routes());
+    all.extend(crate::audit::routes());
     all
 }
 

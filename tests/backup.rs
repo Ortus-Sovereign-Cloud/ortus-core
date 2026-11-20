@@ -111,6 +111,16 @@ fn fill(shape: &Shape) {
         .unwrap();
         tx.commit().await.unwrap();
     });
+    for n in 0..3 {
+        block_on(ortus_core::audit::record(
+            store,
+            &ortus_core::audit::Event::new("test.event", ortus_core::audit::Outcome::Done)
+                .by("u_test")
+                .with(serde_json::json!({ "n": n })),
+            10 + n,
+        ))
+        .unwrap();
+    }
     shape.files.put("drive/ab/one", b"first file").unwrap();
     shape.files.put("mail/raw/2", &[0u8, 1, 2, 255]).unwrap();
     shape.files.put("empty", b"").unwrap();

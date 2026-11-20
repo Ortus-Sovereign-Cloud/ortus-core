@@ -164,6 +164,14 @@ async fn register(request: &Request, ortus: &Arc<Instance>) -> Result<Response, 
     if inserted == 0 {
         return Err(ApiError::conflict("This passkey is already added."));
     }
+    super::audit(
+        ortus,
+        crate::audit::Event::new("auth.credential", crate::audit::Outcome::Done)
+            .by(&me.user.id)
+            .on(&me.user.id)
+            .with(json!({"change": "passkey_added", "passkey": id})),
+    )
+    .await;
     Ok(ok(&json!({"id": id, "name": name})))
 }
 
@@ -251,6 +259,14 @@ async fn sign_in(
         Ok(count) => count,
         Err(reason) => {
             limits::failed(store, &keys, now_ms()).await?;
+            super::audit(
+                ortus,
+                crate::audit::Event::new("auth.sign_in", crate::audit::Outcome::Failed)
+                    .by(&user_id)
+                    .from(&connection.client.ip)
+                    .with(json!({"method": "passkey", "reason": reason})),
+            )
+            .await;
             return Err(failed(&reason));
         }
     };
@@ -289,6 +305,14 @@ async fn remove(
         return Err(ApiError::conflict("This is your last way to sign in. Add another passkey, an authenticator app or a recovery kit first."));
     }
     credentials::remove(store, &me.user.id, &id).await?;
+    super::audit(
+        ortus,
+        crate::audit::Event::new("auth.credential", crate::audit::Outcome::Done)
+            .by(&me.user.id)
+            .on(&me.user.id)
+            .with(json!({"change": "passkey_removed", "passkey": id})),
+    )
+    .await;
     Ok(ok(&json!({"removed": id})))
 }
 

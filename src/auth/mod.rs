@@ -117,6 +117,16 @@ pub fn from_our_client(request: &Request) -> bool {
             .is_some_and(|h| h.value.eq_ignore_ascii_case("ortus"))
 }
 
+/// Writes an audit event; a failure to write is reported in the log, not
+/// to the person (the action itself has happened or failed already).
+pub async fn audit(ortus: &Instance, event: crate::audit::Event<'_>) {
+    if let Err(e) =
+        crate::audit::record(ortus.store.as_ref(), &event, crate::program::now_ms()).await
+    {
+        eprintln!("ortus: audit: could not record {}: {e}", event.action);
+    }
+}
+
 /// The signed-in session of a request, if any.
 pub async fn current(request: &Request, ortus: &Arc<Instance>) -> Option<Session> {
     let token = token(request)?;

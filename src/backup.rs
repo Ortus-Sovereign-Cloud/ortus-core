@@ -530,6 +530,9 @@ pub async fn restore(
                 have, table.columns
             )));
         }
+        // The table was made just now; rows in it came from its migrations
+        // (as a seeded first row) and the backup has them as they were.
+        tx.execute(&format!("DELETE FROM {name}"), &[]).await?;
         let placeholders: Vec<String> = (1..=have.len()).map(|n| format!("${n}")).collect();
         let sql = format!(
             "INSERT INTO {name} ({}) VALUES ({})",

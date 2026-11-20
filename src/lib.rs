@@ -6,6 +6,7 @@
 
 pub mod api;
 pub mod app;
+pub mod audit;
 pub mod auth;
 pub mod backup;
 pub mod cli;
@@ -40,6 +41,7 @@ pub fn schemas() -> Vec<storage::Schema> {
         app::SWITCHES_SCHEMA,
         auth::SCHEMA,
         auth::setup::SCHEMA,
+        audit::SCHEMA,
     ]
 }
 

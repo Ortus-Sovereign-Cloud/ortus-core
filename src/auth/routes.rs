@@ -123,6 +123,13 @@ async fn password_sign_in(
     };
     let Some(user) = user.filter(|_| matches) else {
         limits::failed(store, &keys, now_ms()).await?;
+        super::audit(
+            ortus,
+            crate::audit::Event::new("auth.sign_in", crate::audit::Outcome::Failed)
+                .from(&connection.client.ip)
+                .with(json!({"method": "password", "email": input.email.trim().to_lowercase()})),
+        )
+        .await;
         return Err(wrong());
     };
     limits::succeeded(store, &keys).await?;
@@ -167,6 +174,14 @@ async fn code_sign_in(
     check_limits(store, &keys).await?;
     if !credentials::check_totp(store, &user.id, &input.code, now_ms()).await? {
         limits::failed(store, &keys, now_ms()).await?;
+        super::audit(
+            ortus,
+            crate::audit::Event::new("auth.sign_in", crate::audit::Outcome::Failed)
+                .by(&user.id)
+                .from(&connection.client.ip)
+                .with(json!({"method": "totp"})),
+        )
+        .await;
         // The ticket is used up; a new try starts with the password.
         return Err(wrong());
     }
@@ -205,6 +220,13 @@ async fn recovery_sign_in(
     };
     let (Some(user), Some(left)) = (user, left) else {
         limits::failed(store, &keys, now_ms()).await?;
+        super::audit(
+            ortus,
+            crate::audit::Event::new("auth.sign_in", crate::audit::Outcome::Failed)
+                .from(&connection.client.ip)
+                .with(json!({"method": "recovery", "email": input.email.trim().to_lowercase()})),
+        )
+        .await;
         return Err(wrong());
     };
     limits::succeeded(store, &keys).await?;
@@ -276,6 +298,14 @@ async fn set_password(request: &Request, ortus: &Arc<Instance>) -> Result<Respon
         });
     }
     credentials::set_password(store, &me.user.id, &input.password, now_ms()).await?;
+    super::audit(
+        ortus,
+        crate::audit::Event::new("auth.credential", crate::audit::Outcome::Done)
+            .by(&me.user.id)
+            .on(&me.user.id)
+            .with(json!({"change": "password_set"})),
+    )
+    .await;
     Ok(ok(&json!({ "password": true })))
 }
 
@@ -320,6 +350,14 @@ async fn confirm_totp(request: &Request, ortus: &Arc<Instance>) -> Result<Respon
     let me = session(request, ortus).await?;
     let input: ConfirmBody = body(request)?;
     if credentials::confirm_totp(ortus.store.as_ref(), &me.user.id, &input.code, now_ms()).await? {
+        super::audit(
+            ortus,
+            crate::audit::Event::new("auth.credential", crate::audit::Outcome::Done)
+                .by(&me.user.id)
+                .on(&me.user.id)
+                .with(json!({"change": "authenticator_added"})),
+        )
+        .await;
         Ok(ok(&json!({ "totp": true })))
     } else {
         Err(ApiError {
@@ -338,12 +376,28 @@ async fn remove_totp(request: &Request, ortus: &Arc<Instance>) -> Result<Respons
     for credential in credentials::of_kind(store, &me.user.id, &credentials::Kind::Totp).await? {
         credentials::remove(store, &me.user.id, &credential.id).await?;
     }
+    super::audit(
+        ortus,
+        crate::audit::Event::new("auth.credential", crate::audit::Outcome::Done)
+            .by(&me.user.id)
+            .on(&me.user.id)
+            .with(json!({"change": "authenticator_removed"})),
+    )
+    .await;
     Ok(ok(&json!({ "totp": false })))
 }
 
 async fn new_kit(request: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiError> {
     let me = session(request, ortus).await?;
     let codes = credentials::new_recovery_kit(ortus.store.as_ref(), &me.user.id, now_ms()).await?;
+    super::audit(
+        ortus,
+        crate::audit::Event::new("auth.credential", crate::audit::Outcome::Done)
+            .by(&me.user.id)
+            .on(&me.user.id)
+            .with(json!({"change": "recovery_kit_made"})),
+    )
+    .await;
     Ok(ok(&json!({ "codes": codes })))
 }
 
