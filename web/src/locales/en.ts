@@ -442,6 +442,7 @@ const en = {
   "app.drive": "Drive",
   "app.docs": "Docs",
   "app.approvals": "Approvals",
+  "app.records": "Records",
   "app.admin": "Admin",
   "app.settings": "Settings",
   "search.title": "Search",

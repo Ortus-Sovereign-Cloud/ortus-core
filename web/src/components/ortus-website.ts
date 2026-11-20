@@ -2,7 +2,7 @@ import { LitElement, css, html, nothing, svg } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { LocalizeController } from "@lit-material/core/localize.js";
-import { LOCALES, setLocale, t } from "../i18n.js";
+import { LOCALES, setLocale, appName, t } from "../i18n.js";
 import { APP_ICONS, tileTints } from "../icons.js";
 import type { MessageKey } from "../locales/en.js";
 import { MARK } from "../ui.js";
@@ -429,7 +429,7 @@ export class OrtusWebsite extends LitElement {
               const icon = APP_ICONS[id];
               return html`<div class="app" role="listitem">
                 <span class="tile" data-app=${id} aria-hidden="true">${icon ? svg`<svg width="26" height="26" viewBox="0 0 48 48">${unsafeSVG(icon.svg)}</svg>` : nothing}</span>
-                ${t(this.localize, `app.${id}` as MessageKey)}
+                ${appName(this.localize, id)}
               </div>`;
             })}
           </div>

@@ -4,7 +4,7 @@ import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { LocalizeController } from "@lit-material/core/localize.js";
 import { call, type InstalledApp, type Me } from "../api.js";
 import { APP_ICONS, tileTints } from "../icons.js";
-import { t } from "../i18n.js";
+import { appName, t } from "../i18n.js";
 import type { MessageKey } from "../locales/en.js";
 import { controls } from "../ui.js";
 
@@ -226,7 +226,7 @@ export class OrtusWelcome extends LitElement {
 
   private app(app: InstalledApp) {
     const icon = APP_ICONS[app.id];
-    const name = t(this.localize, `app.${app.id}` as MessageKey);
+    const name = appName(this.localize, app.id);
     return html`<section class="card empty" aria-labelledby="app-${app.id}">
       ${icon ? html`<span class="tile" data-app=${app.id} aria-hidden="true">${svg`<svg width="22" height="22" viewBox="0 0 48 48">${unsafeSVG(icon.svg)}</svg>`}</span>` : nothing}
       <h2 id="app-${app.id}">${t(this.localize, "welcome.appEmpty", { app: name })}</h2>

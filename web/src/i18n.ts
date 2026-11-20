@@ -112,6 +112,12 @@ export function startLocale(): Promise<string> {
   return setLocale(pickLocale(savedLocale(), navigator.languages ?? [navigator.language]), false);
 }
 
+/** An app's name; an app the core does not know by its id. */
+export function appName(localize: LocalizeController, id: string): string {
+  const key = `app.${id}` as MessageKey;
+  return key in en ? t(localize, key) : id;
+}
+
 /** The text for `key` in the component's language; English until a catalog loads. */
 export function t(localize: LocalizeController, key: MessageKey, args?: MessageArgs): string {
   return localize.term(PREFIX + key, en[key] as Message, args);

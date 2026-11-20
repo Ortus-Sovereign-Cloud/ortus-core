@@ -3,7 +3,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { LocalizeController } from "@lit-material/core/localize.js";
 import type { InstalledApp } from "../api.js";
-import { t } from "../i18n.js";
+import { appName, t } from "../i18n.js";
 import { APP_ICONS, tileTints } from "../icons.js";
 import type { MessageKey } from "../locales/en.js";
 
@@ -146,7 +146,7 @@ export class OrtusAppSwitcher extends LitElement {
   @state() private query = "";
 
   private name(app: InstalledApp): string {
-    return t(this.localize, `app.${app.id}` as MessageKey);
+    return appName(this.localize, app.id);
   }
 
   override render() {

@@ -441,6 +441,7 @@ const de: Messages = {
   "app.drive": "Dateien",
   "app.docs": "Dokumente",
   "app.approvals": "Freigaben",
+  "app.records": "Akten",
   "app.admin": "Verwaltung",
   "app.settings": "Einstellungen",
   "search.title": "Suche",

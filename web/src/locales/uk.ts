@@ -441,6 +441,7 @@ const uk: Messages = {
   "app.drive": "Диск",
   "app.docs": "Документи",
   "app.approvals": "Погодження",
+  "app.records": "Записи",
   "app.admin": "Адміністрування",
   "app.settings": "Налаштування",
   "search.title": "Пошук",

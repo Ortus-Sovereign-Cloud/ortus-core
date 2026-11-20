@@ -3,7 +3,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { LocalizeController } from "@lit-material/core/localize.js";
 import { installedApps, setPlace, type InstalledApp, type Me } from "../api.js";
-import { LOCALES, setLocale, t } from "../i18n.js";
+import { LOCALES, setLocale, appName, t } from "../i18n.js";
 import { APP_ICONS, tileTints } from "../icons.js";
 import type { MessageKey } from "../locales/en.js";
 import "./ortus-app-switcher.js";
@@ -375,7 +375,7 @@ export class OrtusShell extends LitElement {
 
   private railItem(app: InstalledApp) {
     const icon = APP_ICONS[app.id];
-    const name = t(this.localize, `app.${app.id}` as MessageKey);
+    const name = appName(this.localize, app.id);
     return html`
       <a class="item" href=${app.path} aria-current=${this.current()?.id === app.id ? "page" : nothing}>
         ${icon

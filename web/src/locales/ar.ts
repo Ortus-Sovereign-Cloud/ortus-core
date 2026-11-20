@@ -441,6 +441,7 @@ const ar: Messages = {
   "app.drive": "الملفات",
   "app.docs": "المستندات",
   "app.approvals": "الموافقات",
+  "app.records": "السجلات",
   "app.admin": "الإدارة",
   "app.settings": "الإعدادات",
   "search.title": "بحث",
