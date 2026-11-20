@@ -146,6 +146,49 @@ pub trait Drive: Send + Sync {
         source: &'a str,
         note: Option<&'a str>,
     ) -> BoxFuture<'a, Result<ItemRef, String>>;
+
+    /// Makes an item whose contents another app keeps (a document of the
+    /// docs app): it lives in the person's drive, in `parent` ("" for the
+    /// root), with Drive's sharing and labels.
+    fn create<'a>(
+        &'a self,
+        user: &'a str,
+        parent: &'a str,
+        name: &'a str,
+        mime: &'a str,
+    ) -> BoxFuture<'a, Result<ItemRef, String>>;
+
+    /// What the person may do with an item and how it is labelled, or
+    /// `None` when they cannot see it.
+    fn describe<'a>(
+        &'a self,
+        user: &'a str,
+        id: &'a str,
+    ) -> BoxFuture<'a, Result<Option<DriveItem>, String>>;
+
+    /// Renames an item (the person must be able to edit it).
+    fn rename<'a>(
+        &'a self,
+        user: &'a str,
+        id: &'a str,
+        name: &'a str,
+    ) -> BoxFuture<'a, Result<(), String>>;
+}
+
+/// An item of the drive, as another app sees it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DriveItem {
+    pub id: String,
+    pub name: String,
+    pub mime: String,
+    pub owner: String,
+    /// view, comment, edit or owner.
+    pub role: String,
+    /// The label that governs it (its own or the strictest above).
+    pub label: Option<String>,
+    /// The folders above it the person may see, top first.
+    pub path: Vec<String>,
+    pub modified_at: i64,
 }
 
 /// Provided by the chat app; used by tasks, approvals and records to tell
