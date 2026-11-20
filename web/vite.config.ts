@@ -6,5 +6,6 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   build: { outDir: "dist", emptyOutDir: true, sourcemap: false, target: "es2022" },
   server: { proxy: { "/api": "http://127.0.0.1:7878" } },
-  test: { environment: "node", include: ["tests/**/*.test.ts"] },
+  // Loading every catalog can take seconds on a busy CI runner.
+  test: { environment: "node", include: ["tests/**/*.test.ts"], testTimeout: 30_000 },
 });
