@@ -59,17 +59,34 @@ impl Policy {
     }
 }
 
-pub async fn current(store: &dyn AsyncStore) -> StoreResult<Policy> {
+/// One installation-wide setting, if it was ever set.
+pub async fn setting(store: &dyn AsyncStore, key: &str) -> StoreResult<Option<String>> {
     let rows = store
         .query(
-            "SELECT value FROM core_settings WHERE key = 'sign_in_policy'",
-            &[],
+            "SELECT value FROM core_settings WHERE key = $1",
+            &[key.into()],
         )
         .await?;
-    Ok(rows
-        .first()
-        .and_then(|r| r.text(0))
-        .and_then(|t| serde_json::from_str(t).ok())
+    Ok(rows.first().and_then(|r| r.text(0)).map(str::to_string))
+}
+
+/// Sets one installation-wide setting.
+pub async fn set_setting(store: &dyn AsyncStore, key: &str, value: &str) -> StoreResult<()> {
+    let mut tx = store.begin().await?;
+    tx.execute("DELETE FROM core_settings WHERE key = $1", &[key.into()])
+        .await?;
+    tx.execute(
+        "INSERT INTO core_settings (key, value, changed_at) VALUES ($1, $2, $3)",
+        &[key.into(), value.into(), now_ms().into()],
+    )
+    .await?;
+    tx.commit().await
+}
+
+pub async fn current(store: &dyn AsyncStore) -> StoreResult<Policy> {
+    Ok(setting(store, "sign_in_policy")
+        .await?
+        .and_then(|t| serde_json::from_str(&t).ok())
         .unwrap_or_default())
 }
 
@@ -79,21 +96,12 @@ pub async fn lifetime(store: &dyn AsyncStore) -> Lifetime {
 }
 
 async fn save(store: &dyn AsyncStore, policy: &Policy) -> StoreResult<()> {
-    let mut tx = store.begin().await?;
-    tx.execute(
-        "DELETE FROM core_settings WHERE key = 'sign_in_policy'",
-        &[],
+    set_setting(
+        store,
+        "sign_in_policy",
+        &serde_json::to_string(policy).unwrap_or_default(),
     )
-    .await?;
-    tx.execute(
-        "INSERT INTO core_settings (key, value, changed_at) VALUES ('sign_in_policy', $1, $2)",
-        &[
-            serde_json::to_string(policy).unwrap_or_default().into(),
-            now_ms().into(),
-        ],
-    )
-    .await?;
-    tx.commit().await
+    .await
 }
 
 /// The people who could not sign in without passwords: active, signing

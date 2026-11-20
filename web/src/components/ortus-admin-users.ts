@@ -266,7 +266,17 @@ export class OrtusAdminUsers extends LitElement {
 
   override connectedCallback(): void {
     super.connectedCallback();
-    void this.load();
+    void this.load().then(() => this.inviteFromLink());
+  }
+
+  /** `?invite=owner` (from the overview's "Add a second owner") opens the invitation. */
+  private async inviteFromLink(): Promise<void> {
+    const role = new URLSearchParams(location.search).get("invite");
+    if (!role) return;
+    await this.updateComplete;
+    const select = this.renderRoot.querySelector<HTMLSelectElement>("#invite-role");
+    if (select && [...select.options].some((o) => o.value === role)) select.value = role;
+    this.renderRoot.querySelector<HTMLDialogElement>("#invite")?.showModal();
   }
 
   private async load(): Promise<void> {

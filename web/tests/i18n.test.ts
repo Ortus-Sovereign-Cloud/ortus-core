@@ -117,6 +117,22 @@ describe("right-to-left layout", () => {
     expect(offenders).toEqual([]);
   });
 
+  // The Content-Security-Policy has no 'unsafe-inline' for styles, so a
+  // style attribute in a template is silently ignored by the browser.
+  // Even styleMap writes the attribute on its first render, so dynamic
+  // values use elements made for them (progress, meter) or classes.
+  it("puts no style attribute in any template", () => {
+    const offenders: string[] = [];
+    for (const file of sources(src).filter((file) => file.endsWith(".ts") && !file.includes("locales"))) {
+      readFileSync(file, "utf8")
+        .split("\n")
+        .forEach((line, index) => {
+          if (/\sstyle=/.test(line)) offenders.push(`${file.slice(src.length + 1)}:${index + 1}: ${line.trim()}`);
+        });
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it("would catch a physical property", () => {
     for (const line of ["  margin-left: 4px;", "left: 0;", "{ right: 12px }", "text-align: right;", "border-right: 1px solid red;"]) expect(physical.test(line), line).toBe(true);
     for (const line of ["margin-inline-start: 4px;", "inset-inline-end: 0;", "text-align: start;", "// the right form", "copyright: none"]) expect(physical.test(line), line).toBe(false);

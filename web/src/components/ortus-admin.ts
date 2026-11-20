@@ -4,6 +4,7 @@ import { LocalizeController } from "@lit-material/core/localize.js";
 import type { Me } from "../api.js";
 import { t } from "../i18n.js";
 import type { MessageKey } from "../locales/en.js";
+import "./ortus-admin-overview.js";
 import "./ortus-admin-signin.js";
 import "./ortus-admin-users.js";
 
@@ -73,6 +74,9 @@ export class OrtusAdmin extends LitElement {
       outline: 2px solid var(--ortus-accent);
       outline-offset: 2px;
     }
+    .forbidden {
+      padding: 32px;
+    }
     .content {
       flex: 1;
       min-inline-size: 0;
@@ -104,14 +108,14 @@ export class OrtusAdmin extends LitElement {
       case "/admin/sign-in":
         return html`<ortus-admin-signin .me=${this.me}></ortus-admin-signin>`;
       default:
-        return html`<slot></slot>`;
+        return html`<ortus-admin-overview .me=${this.me}></ortus-admin-overview>`;
     }
   }
 
   override render() {
     const path = location.pathname.replace(/\/$/, "") || "/admin";
     if (this.me && this.me.role === "member") {
-      return html`<p role="alert" style="padding: 32px">${t(this.localize, "admin.forbidden")}</p>`;
+      return html`<p role="alert" class="forbidden">${t(this.localize, "admin.forbidden")}</p>`;
     }
     return html`
       <header>

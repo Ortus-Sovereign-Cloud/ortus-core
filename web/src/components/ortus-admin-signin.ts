@@ -174,6 +174,9 @@ export class OrtusAdminSignIn extends LitElement {
         padding: 0;
         overflow: hidden;
       }
+      .recent .empty {
+        padding: 0 24px 24px;
+      }
       .recent h2 {
         padding: 24px 24px 8px;
       }
@@ -351,7 +354,7 @@ export class OrtusAdminSignIn extends LitElement {
                 )}
               </tbody>
             </table>`
-          : html`<p class="sub" style="padding: 0 24px 24px">${t(this.localize, "policy.noneYet")}</p>`}
+          : html`<p class="sub empty">${t(this.localize, "policy.noneYet")}</p>`}
       </section>
     `;
   }

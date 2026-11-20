@@ -93,6 +93,7 @@ pub async fn run(name: &str, version: &str, apps: Vec<Arc<dyn App>>, args: &[Str
         }
         ["check-backup", dir] => match backup::check(Path::new(dir), schemas) {
             Ok(checked) => {
+                record("backup_checked_at").await;
                 let m = &checked.manifest;
                 println!(
                     "ortus: {dir} is a whole backup from Ortus {} ({}), {} tables, {} files; this program can restore it",
@@ -149,6 +150,18 @@ pub async fn run(name: &str, version: &str, apps: Vec<Arc<dyn App>>, args: &[Str
     }
 }
 
+/// Notes the time of a backup step for the admin's first-run checklist,
+/// when the installation's settings can be reached; a backup check works
+/// without them too.
+async fn record(key: &str) {
+    let Ok(config) = Config::from_process() else {
+        return;
+    };
+    if let Ok(store) = config.open_store().await {
+        let _ = crate::auth::policy::set_setting(store.as_ref(), key, &now_ms().to_string()).await;
+    }
+}
+
 async fn take_backup(config: &Config, dir: &Path) -> Result<(), String> {
     let store = config.open_store().await.map_err(|e| e.to_string())?;
     let files = config.open_files().map_err(|e| e.to_string())?;
@@ -156,6 +169,9 @@ async fn take_backup(config: &Config, dir: &Path) -> Result<(), String> {
         .await
         .map_err(|e| e.to_string())?;
     let rows: u64 = manifest.tables.iter().map(|t| t.rows).sum();
+    let _ =
+        crate::auth::policy::set_setting(store.as_ref(), "backup_taken_at", &now_ms().to_string())
+            .await;
     if !manifest.files.skipped.is_empty() {
         eprintln!(
             "ortus: warning: {} files were deleted while the backup ran and are not in it: {}",

@@ -12,6 +12,7 @@ pub mod backup;
 pub mod cli;
 pub mod config;
 pub mod files;
+pub mod first_run;
 pub mod form;
 pub mod http;
 pub mod instance;

@@ -433,6 +433,90 @@
         ]
       }
     },
+    "/api/v1/admin/overview": {
+      "get": {
+        "description": "For administrators and owners.",
+        "operationId": "getAdminOverview",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "The steps to go live (done, next, later) and the installation's facts: where it runs, version, where data lives, what it calls out to.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/overview/data-confirmed": {
+      "post": {
+        "description": "For owners.",
+        "operationId": "confirmDataPlace",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "The owner confirms where data lives.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/sign-in": {
       "get": {
         "description": "For administrators and owners.",
