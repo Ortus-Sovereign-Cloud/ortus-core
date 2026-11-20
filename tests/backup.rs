@@ -25,11 +25,23 @@ const NOTES: &[Migration] = &[
     },
 ];
 
+/// An app whose name sorts before the core's and whose migration touches a
+/// core table: a restore must make the core's schemas first.
+const EARLY: &[Migration] = &[Migration {
+    version: 1,
+    name: "touches the search index",
+    sql: "UPDATE core_search SET at = at WHERE 1 = 0",
+}];
+
 fn schemas() -> Vec<Schema> {
     let mut all = ortus_core::schemas();
     all.push(Schema {
         app: "test.notes",
         migrations: NOTES,
+    });
+    all.push(Schema {
+        app: "aaa",
+        migrations: EARLY,
     });
     all
 }
@@ -313,6 +325,10 @@ fn a_backup_from_a_newer_program_or_with_unknown_parts_is_refused() {
     older.push(Schema {
         app: "test.notes",
         migrations: &NOTES[..1],
+    });
+    older.push(Schema {
+        app: "aaa",
+        migrations: EARLY,
     });
     assert!(message(backup::check(&b, &older)).contains("newer than this program"));
     assert!(message(backup::check(&b, &ortus_core::schemas())).contains("does not have"));

@@ -81,7 +81,7 @@ export class OrtusAdminBackup extends LitElement {
       }
       .tiles {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr);
         gap: 12px;
       }
       .tile {
@@ -104,6 +104,7 @@ export class OrtusAdminBackup extends LitElement {
         min-inline-size: 0;
       }
       select {
+        field-sizing: content;
         min-inline-size: 0;
         max-inline-size: 100%;
         padding: 0;
@@ -133,7 +134,7 @@ export class OrtusAdminBackup extends LitElement {
         margin-block: 32px 12px;
       }
       .bars button {
-        flex: 1;
+        flex: 0 1 14px;
         min-inline-size: 4px;
         padding: 0;
         border: 0;
@@ -286,7 +287,8 @@ export class OrtusAdminBackup extends LitElement {
         background: var(--ortus-bg);
         font-family: var(--ortus-mono, ui-monospace, monospace);
         font-size: 13px;
-        white-space: pre;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
       }
       .add fieldset {
         margin: 16px 0;
@@ -486,7 +488,7 @@ export class OrtusAdminBackup extends LitElement {
         : nothing}
       ${this.hookError ? html`<p class="error" role="alert">${this.hookError}</p>` : nothing}
       <pre class="code" aria-label=${t(this.localize, "integrations.example")}><code>POST /api/v1/admin/webhooks
-{"name":"Case management system","url":"https://cases.example/hook","events":["record.filed","approval.done"]}</code></pre>
+{"name":"Cases","url":"https://cases.example/hook","events":["record.filed"]}</code></pre>
     </section>`;
   }
 

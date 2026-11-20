@@ -406,7 +406,7 @@ fn sign_out(
     ortus: Arc<Instance>,
 ) -> BoxFuture<'static, Response> {
     Box::pin(async move {
-        if let Some(token) = crate::auth::token(&request) {
+        if let Some(token) = crate::auth::token(&request, ortus.config.secure()) {
             if crate::auth::sessions::end(ortus.store.as_ref(), &token)
                 .await
                 .is_err()
@@ -543,6 +543,26 @@ fn setup(
             Err(e) => return e.response(&request),
         };
         use crate::auth::setup::{create_owner, SetupError};
+        // Guesses of the setup token slow down like sign-in tries.
+        let ip = crate::auth::client_address(&request, &connection, &ortus.config.trusted_proxies);
+        let key = format!("setup:{ip}");
+        // Only while there is no owner: afterwards there is nothing to guess.
+        let open = crate::auth::setup::needed(ortus.store.as_ref())
+            .await
+            .unwrap_or(false);
+        if !open {
+            // Answered below (the installation has its owner).
+        } else if let Ok(Some(_)) =
+            crate::auth::limits::blocked_until(ortus.store.as_ref(), &key, crate::program::now_ms())
+                .await
+        {
+            return ApiError {
+                status: 429,
+                code: "slow_down",
+                message: "Too many tries; wait a while.".into(),
+            }
+            .response(&request);
+        }
         match create_owner(
             ortus.store.as_ref(),
             &body.token,
@@ -553,6 +573,7 @@ fn setup(
         .await
         {
             Ok(user) => {
+                let _ = crate::auth::limits::succeeded(ortus.store.as_ref(), &[key]).await;
                 crate::auth::audit(
                     &ortus,
                     crate::audit::Event::new("auth.owner_created", crate::audit::Outcome::Done)

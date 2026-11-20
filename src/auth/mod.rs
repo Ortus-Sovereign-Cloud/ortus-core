@@ -86,7 +86,9 @@ pub fn random_token() -> String {
 
 /// The session token a request carries, from its cookie or its
 /// `Authorization: Bearer` header.
-pub fn token(request: &Request) -> Option<String> {
+/// Behind HTTPS (`secure`) only the `__Host-` cookie counts: a plain one
+/// may have been set by a sibling site of the same domain.
+pub fn token(request: &Request, secure: bool) -> Option<String> {
     if let Some(value) = request.header("authorization") {
         if let Some(token) = value.value.strip_prefix("Bearer ") {
             return Some(token.trim().to_string());
@@ -94,8 +96,10 @@ pub fn token(request: &Request) -> Option<String> {
     }
     let cookies = request.header("cookie")?;
     for pair in cookies.value.split(';') {
-        let (name, value) = pair.trim().split_once('=')?;
-        if name == cookie_name(true) || name == cookie_name(false) {
+        let Some((name, value)) = pair.trim().split_once('=') else {
+            continue;
+        };
+        if name == cookie_name(secure) {
             return Some(value.to_string());
         }
     }
@@ -177,7 +181,7 @@ pub fn client_address(
 
 /// The signed-in session of a request, if any.
 pub async fn current(request: &Request, ortus: &Arc<Instance>) -> Option<Session> {
-    let token = token(request)?;
+    let token = token(request, ortus.config.secure())?;
     if token.is_empty() || token.len() > 128 {
         return None;
     }

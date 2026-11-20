@@ -585,7 +585,16 @@ impl Config {
             outgoing_mail,
             signup,
             website,
-            setup_token: env("ORTUS_SETUP_TOKEN").map(Secret),
+            setup_token: match env("ORTUS_SETUP_TOKEN") {
+                // A chosen token guards the whole installation until its
+                // owner exists: long enough not to be guessed.
+                Some(t) if t.trim().len() < 12 => {
+                    return Err(ConfigError(
+                        "ORTUS_SETUP_TOKEN must be at least 12 characters".into(),
+                    ))
+                }
+                t => t.map(Secret),
+            },
         })
     }
 

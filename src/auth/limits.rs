@@ -85,7 +85,10 @@ pub async fn succeeded(store: &dyn AsyncStore, keys: &[String]) -> StoreResult<(
 /// The keys of a sign-in attempt: the address tried and where from.
 pub fn keys(email: &str, client_ip: &str) -> Vec<String> {
     vec![
-        format!("email:{}", email.trim().to_lowercase()),
+        // The address together with where the tries come from: a stranger
+        // guessing someone's password slows down without locking that
+        // person out of their own sign-in.
+        format!("email:{}|{client_ip}", email.trim().to_lowercase()),
         format!("ip:{client_ip}"),
     ]
 }

@@ -95,6 +95,9 @@ pub async fn run(name: &str, version: &str, apps: Vec<Arc<dyn App>>, args: &[Str
         }
         ["export-point", name, dir] => with_config(|config| async move {
             let dest = crate::points::destination(&config.data_dir)?;
+            let env = std::env::var("ORTUS_SECRETS_KEY").ok().filter(|v| !v.trim().is_empty());
+            let keys = crate::secrets::Keyring::load(&config.data_dir, env)?;
+            crate::points::verify(&dest, name, &keys).await.map_err(|e| e.to_string())?;
             let manifest = crate::points::export(&dest, name, Path::new(dir)).await.map_err(|e| e.to_string())?;
             println!("ortus: restore point {name} written to {dir} ({} tables, {} files); `ortus restore {dir}` takes it", manifest.tables.len(), manifest.files.count);
             Ok(())

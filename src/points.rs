@@ -257,8 +257,15 @@ pub async fn take(
             skipped,
         },
     };
-    // The manifest last: a point without one was cut short.
+    // The manifest last: a point without one was cut short. Before it, its
+    // checksum sealed with this installation's key, so a point changed in
+    // the backup store (which may be shared or less guarded) is refused.
     let text = serde_json::to_string_pretty(&manifest).map_err(|e| BackupError(e.to_string()))?;
+    dest.put(
+        &format!("{base}/manifest.seal"),
+        instance.keys.seal_text(&sha256(text.as_bytes())).as_bytes(),
+    )
+    .await?;
     dest.put(&format!("{base}/manifest.json"), text.as_bytes())
         .await?;
     let point = Point {
@@ -397,6 +404,39 @@ pub async fn prune(instance: &Instance, dest: &Files, now: i64) -> Result<usize,
     Ok(removed)
 }
 
+/// Whether point `name` is as this installation took it: its manifest's
+/// checksum, sealed with this installation's keys, matches.
+pub async fn verify(
+    dest: &Files,
+    name: &str,
+    keys: &crate::secrets::Keyring,
+) -> Result<(), BackupError> {
+    if name.is_empty() || !name.chars().all(|c| c.is_ascii_digit() || c == '-') {
+        return Err(BackupError(format!("'{name}' is not a restore point")));
+    }
+    let base = format!("points/{name}");
+    let refused = || {
+        BackupError(format!(
+            "restore point {name} is not as this installation took it"
+        ))
+    };
+    let text = dest
+        .get(&format!("{base}/manifest.json"))
+        .await?
+        .ok_or_else(refused)?;
+    let seal = dest
+        .get(&format!("{base}/manifest.seal"))
+        .await?
+        .ok_or_else(refused)?;
+    let opened = keys
+        .open_text(&String::from_utf8_lossy(&seal))
+        .map_err(|_| refused())?;
+    if opened != sha256(&text) {
+        return Err(refused());
+    }
+    Ok(())
+}
+
 /// Writes a point out as a backup directory (`ortus restore` takes it).
 pub async fn export(dest: &Files, name: &str, dir: &Path) -> Result<Manifest, BackupError> {
     if !name.chars().all(|c| c.is_ascii_digit() || c == '-') {
@@ -415,6 +455,7 @@ pub async fn export(dest: &Files, name: &str, dir: &Path) -> Result<Manifest, Ba
     };
     std::fs::create_dir_all(dir.join("tables")).map_err(io(dir))?;
     for t in &manifest.tables {
+        crate::backup::plain_name(&t.name)?;
         let rows = dest
             .get(&format!("{base}/tables/{}.jsonl", t.name))
             .await?
@@ -429,6 +470,11 @@ pub async fn export(dest: &Files, name: &str, dir: &Path) -> Result<Manifest, Ba
     std::fs::write(dir.join("files.jsonl"), &listing).map_err(io(dir))?;
     for line in String::from_utf8_lossy(&listing).lines() {
         let f: FileLine = serde_json::from_str(line).map_err(|e| BackupError(e.to_string()))?;
+        // Keys and checksums are checked before they become paths.
+        crate::files::check(&f.key)?;
+        if f.sha256.len() != 64 || !f.sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(BackupError(format!("{}: not a checksum", f.sha256)));
+        }
         let contents = dest
             .get(&format!("blobs/{}", f.sha256))
             .await?
@@ -823,6 +869,9 @@ fn restorer(
 async fn opened(instance: &Instance, name: &str) -> Result<Snapshot, crate::api::ApiError> {
     let dest =
         destination(&instance.config.data_dir).map_err(|_| crate::api::ApiError::internal())?;
+    verify(&dest, name, &instance.keys)
+        .await
+        .map_err(|e| crate::api::ApiError::bad_request(e.to_string()))?;
     Snapshot::open(dest, name)
         .await
         .map_err(crate::api::ApiError::bad_request)
@@ -1004,6 +1053,9 @@ async fn test_into(
     scratch: &Path,
 ) -> Result<String, String> {
     let exported = scratch.join("backup");
+    verify(dest, name, &instance.keys)
+        .await
+        .map_err(|e| e.to_string())?;
     export(dest, name, &exported)
         .await
         .map_err(|e| e.to_string())?;

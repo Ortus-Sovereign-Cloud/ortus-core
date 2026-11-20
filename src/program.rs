@@ -1,5 +1,8 @@
 //! Starting and running an Ortus program from its configuration.
 
+/// The largest request body the web port takes (32 MiB).
+pub const MAX_BODY: u64 = 32 * 1024 * 1024;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -135,6 +138,12 @@ pub async fn run_until(
         // precedence so one configuration describes the whole program.
         std::env::set_var("RWS_CONFIG_IP", &config.web_ip);
         std::env::set_var("RWS_CONFIG_PORT", config.web_port.to_string());
+        // No body larger than the largest any route takes (a Drive upload
+        // part is 16 MB): refused before it is read, so nobody fills the
+        // memory with one request before sign-in is checked.
+        if std::env::var_os("RWS_CONFIG_MAX_BODY_SIZE_IN_BYTES").is_none() {
+            std::env::set_var("RWS_CONFIG_MAX_BODY_SIZE_IN_BYTES", MAX_BODY.to_string());
+        }
         let (listener, pool) = Server::setup()?;
         // The listener is bound: tell systemd (Type=notify) we are up.
         #[cfg(unix)]

@@ -56,7 +56,7 @@ pub async fn authenticate(
     // Their own counters: a phone's tries neither lock nor unlock the
     // web sign-in of the same person.
     let keys = vec![
-        format!("app:{}", email.trim().to_lowercase()),
+        format!("app:{}|{client}", email.trim().to_lowercase()),
         format!("app-ip:{client}"),
     ];
     for key in &keys {

@@ -264,10 +264,13 @@ fn token(
             let rows = tx
                 .query("SELECT client_id, user_id, redirect_uri, challenge, nonce, scope, methods, auth_time, expires_at FROM core_oidc_codes WHERE code_hash = $1", &[code_hash.as_str().into()])
                 .await?;
-            // A code works once, whatever happens next.
-            tx.execute("DELETE FROM core_oidc_codes WHERE code_hash = $1 OR expires_at < $2", &[code_hash.as_str().into(), now_ms().into()]).await?;
+            // A code works once, whatever happens next: only the request
+            // whose delete removed it gets it (two at once on PostgreSQL
+            // both read it; one deletes it).
+            let claimed = tx.execute("DELETE FROM core_oidc_codes WHERE code_hash = $1", &[code_hash.as_str().into()]).await?;
+            tx.execute("DELETE FROM core_oidc_codes WHERE expires_at < $1", &[now_ms().into()]).await?;
             tx.commit().await?;
-            Ok::<_, crate::storage::StoreError>(rows.into_iter().next())
+            Ok::<_, crate::storage::StoreError>(rows.into_iter().next().filter(|_| claimed == 1))
         }
         .await;
         let Ok(Some(row)) = taken else {

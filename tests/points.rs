@@ -95,6 +95,21 @@ fn pointing(store: Arc<dyn AsyncStore>) {
     assert!(tested.detail.ends_with("keys open"), "{tested:?}");
     let recorded = block_on(store.query("SELECT ok FROM core_restore_tests", &[])).unwrap();
     assert_eq!(Some(1), recorded.last().and_then(|r| r.int(0)));
+    // A point changed in the backup store is refused (its sealed checksum
+    // no longer matches), and so is one sealed by another installation.
+    block_on(points::verify(&dest, &name, &instance.keys)).unwrap();
+    let key = format!("points/{name}/manifest.json");
+    let text = String::from_utf8(block_on(dest.get(&key)).unwrap().unwrap()).unwrap();
+    block_on(dest.put(&key, text.replace("\"files\"", "\"files\" ").as_bytes())).unwrap();
+    assert!(block_on(points::verify(&dest, &name, &instance.keys)).is_err());
+    block_on(dest.put(&key, text.as_bytes())).unwrap();
+    let other = ortus_core::secrets::Keyring::load(
+        std::path::Path::new("/nonexistent"),
+        Some("CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=".into()),
+    )
+    .unwrap();
+    assert!(block_on(points::verify(&dest, &name, &other)).is_err());
+    assert!(!block_on(points::test_restore(&instance, &dest, "../x")).ok);
     assert_eq!(
         Some(b"bus timetable".to_vec()),
         block_on(target_files.get("drive/c.txt")).unwrap()

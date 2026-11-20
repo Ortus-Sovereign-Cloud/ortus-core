@@ -124,7 +124,7 @@ fn sha256(bytes: &[u8]) -> String {
 
 /// Table and column names come from the database or from a backup; only
 /// plain lowercase names are ever put into SQL.
-fn plain_name(name: &str) -> Result<&str, BackupError> {
+pub(crate) fn plain_name(name: &str) -> Result<&str, BackupError> {
     let ok = !name.is_empty()
         && name.len() <= 63
         && name
@@ -522,13 +522,25 @@ pub async fn restore(
         ));
     }
 
-    // Each schema exactly as it was when the backup was taken.
-    for (app, version) in &checked.manifest.schemas {
-        let schema = schemas
-            .iter()
-            .find(|schema| schema.app == app)
-            .ok_or_else(|| BackupError(format!("this program does not have '{app}'")))?;
-        migrate(store, app, &schema.migrations[..*version as usize], now_ms).await?;
+    // Each schema exactly as it was when the backup was taken, in the
+    // program's order (the core's first: an app's migration may touch a
+    // core table), not the manifest's alphabetical one.
+    for app in checked.manifest.schemas.keys() {
+        if !schemas.iter().any(|schema| schema.app == app) {
+            return Err(BackupError(format!("this program does not have '{app}'")));
+        }
+    }
+    for schema in schemas {
+        let Some(version) = checked.manifest.schemas.get(schema.app) else {
+            continue;
+        };
+        migrate(
+            store,
+            schema.app,
+            &schema.migrations[..*version as usize],
+            now_ms,
+        )
+        .await?;
     }
 
     let mut tx = store.begin().await?;
