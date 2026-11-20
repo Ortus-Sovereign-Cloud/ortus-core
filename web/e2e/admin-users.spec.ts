@@ -21,7 +21,7 @@ test("the owner invites someone, imports a list and suspends a person", async ({
   await page.getByRole("button", { name: en["people.invite"] }).click();
   await page.getByLabel(en["people.name"], { exact: true }).fill("Iryna Savchenko");
   await page.getByLabel(en["people.email"], { exact: true }).fill("iryna@ministry.example");
-  await page.getByLabel(en["people.groupsField"]).fill("Logistics");
+  await page.getByLabel(en["people.groupsField"]).fill("Procurement");
   await page.getByRole("button", { name: en["people.send"] }).click();
   await expect(page.getByRole("status")).toHaveText(en["people.invited"]);
   const iryna = page.getByRole("row").filter({ hasText: "iryna@ministry.example" });
@@ -30,16 +30,18 @@ test("the owner invites someone, imports a list and suspends a person", async ({
   await page.locator("#csv").setInputFiles({
     name: "people.csv",
     mimeType: "text/csv",
-    buffer: Buffer.from("email,name,role,groups\njonas@ministry.example,Jonas Berg,member,Logistics\nbroken line\n"),
+    buffer: Buffer.from("email,name,role,groups\njonas@ministry.example,Jonas Berg,member,Procurement\nbroken line\n"),
   });
   await expect(page.getByRole("alert")).toHaveText(en["people.imported"].replace("{added}", "1").replace("{failed}", "1"));
   await expect(page.getByRole("row").filter({ hasText: "jonas@ministry.example" })).toBeVisible();
 
-  await page.getByLabel(en["people.filter"]).fill("logistics");
+  await page.getByLabel(en["people.filter"]).fill("procurement");
   await expect(page.getByRole("row")).toHaveCount(3); // the header and two people
   await page.getByLabel(en["people.filter"]).fill("");
+  await expect(page.getByRole("row").filter({ hasText: "taras@ministry.example" })).toBeVisible();
 
   await page.getByRole("row").filter({ hasText: "jonas@ministry.example" }).click();
+  await expect(page.getByRole("complementary", { name: "Jonas Berg" })).toBeVisible();
   await page.getByRole("button", { name: en["people.suspend"], exact: true }).click();
   await expect(page.getByRole("status")).toHaveText(en["people.suspended"]);
   await expect(page.getByRole("row").filter({ hasText: "jonas@ministry.example" })).toContainText(en["people.state.suspended"]);

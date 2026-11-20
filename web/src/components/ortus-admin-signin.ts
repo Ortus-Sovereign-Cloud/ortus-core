@@ -108,7 +108,7 @@ export class OrtusAdminSignIn extends LitElement {
         border-radius: 13px;
         background: var(--ortus-line-strong);
         cursor: pointer;
-        transition: background-color 300ms cubic-bezier(0.22, 1, 0.36, 1);
+        transition: background-color calc(300ms * var(--ortus-motion, 1)) cubic-bezier(0.22, 1, 0.36, 1);
       }
       .switch::before {
         content: "";
@@ -119,7 +119,7 @@ export class OrtusAdminSignIn extends LitElement {
         block-size: 20px;
         border-radius: 50%;
         background: var(--ortus-text);
-        transition: inset-inline-start 300ms cubic-bezier(0.22, 1, 0.36, 1);
+        transition: inset-inline-start calc(300ms * var(--ortus-motion, 1)) cubic-bezier(0.22, 1, 0.36, 1);
       }
       .switch:checked {
         background: var(--ortus-accent);

@@ -39,3 +39,24 @@ body {
   line-height: 1.4;
   -webkit-font-smoothing: antialiased;
 }
+
+/* Personal settings (preferences.ts). Zoom scales every pixel size,
+   inside shadow roots too. --ortus-motion multiplies transition times;
+   components write calc(300ms * var(--ortus-motion, 1)). */
+html[data-text-size="110"] {
+  zoom: 1.1;
+}
+html[data-text-size="125"] {
+  zoom: 1.25;
+}
+html[data-text-size="150"] {
+  zoom: 1.5;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ortus-motion: 0;
+  }
+}
+html[data-motion="reduce"] {
+  --ortus-motion: 0;
+}

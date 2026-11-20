@@ -15,6 +15,7 @@ pub mod external;
 pub mod limits;
 pub mod mail_text;
 pub mod passkeys;
+pub mod personal;
 pub mod policy;
 pub mod routes;
 pub mod saml;

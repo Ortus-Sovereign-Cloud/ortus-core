@@ -279,13 +279,22 @@ export class OrtusAdminUsers extends LitElement {
     this.renderRoot.querySelector<HTMLDialogElement>("#invite")?.showModal();
   }
 
+  /** Counts loads, so an older answer (typing in the filter) never overwrites a newer one. */
+  private loads = 0;
+
   private async load(): Promise<void> {
     const params = new URLSearchParams();
     if (this.query) params.set("q", this.query);
     if (this.filter) params.set("filter", this.filter);
-    this.listing = await call<Listing>("GET", `/admin/users?${params}`);
-    this.directory = await call<{ connected: boolean }>("GET", "/admin/directory").catch(() => undefined);
-    if (this.selected) this.selected = this.listing.users.find((u) => u.id === this.selected!.id) ?? this.selected;
+    const load = ++this.loads;
+    const [listing, directory] = await Promise.all([
+      call<Listing>("GET", `/admin/users?${params}`),
+      call<{ connected: boolean }>("GET", "/admin/directory").catch(() => undefined),
+    ]);
+    if (load !== this.loads) return;
+    this.listing = listing;
+    this.directory = directory;
+    if (this.selected) this.selected = listing.users.find((u) => u.id === this.selected!.id) ?? this.selected;
   }
 
   private async select(person: Person): Promise<void> {

@@ -1,6 +1,8 @@
 import { LitElement, html } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { session, setupNeeded, site, type Me } from "../api.js";
+import { startPreferences } from "../preferences.js";
+import "./ortus-accept.js";
 import "./ortus-setup.js";
 import "./ortus-shell.js";
 import "./ortus-sign-in.js";
@@ -8,7 +10,7 @@ import "./ortus-sign-up.js";
 import "./ortus-terms.js";
 import "./ortus-website.js";
 
-type View = { kind: "loading" } | { kind: "setup" } | { kind: "sign-in" } | { kind: "sign-up" } | { kind: "terms" } | { kind: "website"; signupOpen: boolean } | { kind: "app"; me: Me } | { kind: "failed" };
+type View = { kind: "loading" } | { kind: "setup" } | { kind: "sign-in" } | { kind: "sign-up" } | { kind: "terms" } | { kind: "website"; signupOpen: boolean } | { kind: "app"; me: Me } | { kind: "accept" } | { kind: "failed" };
 
 /**
  * Decides what the address shows: the setup page on a new installation,
@@ -28,6 +30,11 @@ export class OrtusRoot extends LitElement {
       this.view = { kind: "setup" };
       return;
     }
+    // An invitation link signs its person in, whoever was signed in before.
+    if (location.pathname === "/welcome/accept") {
+      this.view = { kind: "accept" };
+      return;
+    }
     // Pages anyone may read, signed in or not.
     if (location.pathname === "/terms") {
       this.view = { kind: "terms" };
@@ -42,6 +49,7 @@ export class OrtusRoot extends LitElement {
     }
     if (user) {
       this.view = { kind: "app", me: user };
+      void startPreferences().catch(() => undefined);
       return;
     }
     const needed = await setupNeeded().catch(() => false);
@@ -71,6 +79,8 @@ export class OrtusRoot extends LitElement {
         return html`<ortus-sign-up></ortus-sign-up>`;
       case "terms":
         return html`<ortus-terms></ortus-terms>`;
+      case "accept":
+        return html`<ortus-accept></ortus-accept>`;
       case "website":
         return html`<ortus-website .signupOpen=${this.view.signupOpen}></ortus-website>`;
       case "app":

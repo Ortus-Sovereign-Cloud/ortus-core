@@ -1494,6 +1494,130 @@
         ]
       }
     },
+    "/api/v1/me/preferences": {
+      "get": {
+        "description": "For anyone signed in.",
+        "operationId": "getMyPreferences",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "One's language (null: the browser's), text size (percent) and motion (system or reduce).",
+        "tags": [
+          "me"
+        ]
+      },
+      "put": {
+        "description": "For anyone signed in.",
+        "operationId": "setMyPreferences",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Change any of {language, text_size, motion}.",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/profile": {
+      "put": {
+        "description": "For anyone signed in.",
+        "operationId": "setMyProfile",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Change one's name: {name}.",
+        "tags": [
+          "me"
+        ]
+      }
+    },
     "/api/v1/me/recovery-kit": {
       "post": {
         "description": "For anyone signed in.",
@@ -1575,6 +1699,90 @@
         "summary": "How the signed-in person can sign in: password, authenticator app, recovery codes left, passkeys.",
         "tags": [
           "accounts"
+        ]
+      }
+    },
+    "/api/v1/me/sessions": {
+      "get": {
+        "description": "For anyone signed in.",
+        "operationId": "listMySessions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "The devices one is signed in on, the current one marked.",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/sessions/:id": {
+      "delete": {
+        "description": "For anyone signed in.",
+        "operationId": "endMySession",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Sign one device out.",
+        "tags": [
+          "me"
         ]
       }
     },
@@ -1699,6 +1907,90 @@
         "summary": "Finish adding the authenticator app with its first code.",
         "tags": [
           "accounts"
+        ]
+      }
+    },
+    "/api/v1/me/welcome": {
+      "get": {
+        "description": "For anyone signed in.",
+        "operationId": "getMyWelcome",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "The first-day steps (secure sign-in, read the policies, meet the team), one's groups and people to meet.",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/welcome/:step": {
+      "post": {
+        "description": "For anyone signed in.",
+        "operationId": "finishWelcomeStep",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Mark a first-day step done: policies or team.",
+        "tags": [
+          "me"
         ]
       }
     },

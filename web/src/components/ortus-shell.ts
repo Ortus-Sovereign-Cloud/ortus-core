@@ -8,6 +8,8 @@ import { APP_ICONS, tileTints } from "../icons.js";
 import type { MessageKey } from "../locales/en.js";
 import "./ortus-app-switcher.js";
 import "./ortus-admin.js";
+import "./ortus-settings.js";
+import "./ortus-welcome.js";
 import "./ortus-security.js";
 
 /** How many apps the rail shows before "All apps". */
@@ -17,6 +19,15 @@ const RAIL_APPS = 6;
  * The frame every Ortus screen sits in: the app rail along the inline
  * start edge and the current screen beside it.
  */
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]!.toUpperCase())
+    .join("");
+}
+
 @customElement("ortus-shell")
 export class OrtusShell extends LitElement {
   static override styles = [
@@ -122,6 +133,18 @@ export class OrtusShell extends LitElement {
     }
     .language {
       position: relative;
+    }
+    .avatar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      inline-size: 34px;
+      block-size: 34px;
+      border-radius: 10px;
+      background: var(--ortus-text);
+      color: var(--ortus-bg);
+      font-size: 12px;
+      font-weight: 600;
     }
     .code {
       inline-size: 30px;
@@ -237,6 +260,7 @@ export class OrtusShell extends LitElement {
   }
 
   private async choose(code: string): Promise<void> {
+    // This device only; My settings sets the account's language.
     await setLocale(code);
     this.renderRoot.querySelector<HTMLElement>("[popover]")?.hidePopover();
   }
@@ -267,6 +291,11 @@ export class OrtusShell extends LitElement {
           <span class="label">${t(this.localize, "shell.allAppsShort")}</span>
         </a>
         <span class="spacer"></span>
+        ${this.me
+          ? html`<a class="item" href="/settings" aria-label=${t(this.localize, "settings.title")} aria-current=${location.pathname.startsWith("/settings") ? "page" : nothing}>
+              <span class="avatar" aria-hidden="true">${initials(this.me.name)}</span>
+            </a>`
+          : nothing}
         <div class="language">
           <button class="item" popovertarget="languages" aria-haspopup="menu" aria-expanded=${this.languageOpen ? "true" : "false"} aria-label=${t(this.localize, "language.label")}>
             <span class="code" aria-hidden="true">${lang}</span>
@@ -299,6 +328,12 @@ export class OrtusShell extends LitElement {
     const path = location.pathname;
     if (path === "/settings/security") {
       return html`<ortus-security></ortus-security>`;
+    }
+    if (path === "/settings") {
+      return html`<ortus-settings .me=${this.me}></ortus-settings>`;
+    }
+    if (path === "/welcome") {
+      return html`<ortus-welcome .me=${this.me} .apps=${this.apps ?? []}></ortus-welcome>`;
     }
     if (path === "/admin" || path.startsWith("/admin/")) {
       return html`<ortus-admin .me=${this.me}></ortus-admin>`;

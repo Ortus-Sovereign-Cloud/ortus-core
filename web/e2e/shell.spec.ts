@@ -60,8 +60,8 @@ test("the rail and the switcher show the installed apps", async ({ page }) => {
   await withApps(page);
   await page.goto("/");
   const nav = page.getByRole("navigation", { name: en["shell.apps"] });
-  // Home, six apps, Admin (the owner is an administrator) and All apps.
-  await expect(nav.getByRole("link")).toHaveCount(9);
+  // Home, six apps, Admin (the owner is an administrator), All apps and My settings.
+  await expect(nav.getByRole("link")).toHaveCount(10);
   await expect(nav.locator(".label")).toHaveText(["Mail", "Chat", "Calls", "Calendar", "Tasks", "People", "Admin", "All apps"]);
   await expect(nav.getByRole("link", { name: en["shell.home"] })).toHaveAttribute("href", "/");
   await expect(nav.getByRole("link", { name: "All apps", exact: true })).toHaveAttribute("aria-current", "page");

@@ -319,6 +319,7 @@ async fn expire(tx: &mut dyn AsyncTx, ortus: &Instance, now: i64) -> Result<(), 
             "DELETE FROM core_group_members WHERE user_id = $1",
             "DELETE FROM core_invites WHERE user_id = $1",
             "DELETE FROM core_external_links WHERE user_id = $1",
+            "DELETE FROM core_preferences WHERE user_id = $1",
             "DELETE FROM core_users WHERE id = $1",
         ] {
             tx.execute(sql, &[id.as_str().into()])

@@ -53,7 +53,7 @@ export function pickLocale(saved: string | null | undefined, browser: readonly s
   return DEFAULT_LOCALE;
 }
 
-function savedLocale(): string | null {
+export function savedLocale(): string | null {
   try {
     return localStorage.getItem(STORAGE_KEY);
   } catch {
