@@ -213,6 +213,17 @@ impl AppWorker {
                 owners.push((job.kind.clone(), id));
                 worker = worker.handle(&job.kind, job.handler);
             }
+            for job in app.outside_jobs(&instance) {
+                if !job.kind.starts_with(&format!("{id}.")) {
+                    eprintln!(
+                        "ortus: {id}: job kind {} does not start with '{id}.'; not run",
+                        job.kind
+                    );
+                    continue;
+                }
+                owners.push((job.kind.clone(), id));
+                worker = worker.handle_outside(&job.kind, job.handler);
+            }
         }
         let mut periodic = crate::PERIODIC.to_vec();
         for app in &instance.apps {

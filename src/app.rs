@@ -88,6 +88,13 @@ pub struct JobKind {
     pub handler: jobs::Handler,
 }
 
+/// A kind of background job whose handler runs outside any transaction
+/// (see [`jobs::OutsideHandler`]): work that waits on the network.
+pub struct OutsideJobKind {
+    pub kind: String,
+    pub handler: jobs::OutsideHandler,
+}
+
 /// An Ortus app. Only [`info`](App::info) is required.
 pub trait App: Send + Sync + 'static {
     fn info(&self) -> AppInfo;
@@ -105,6 +112,12 @@ pub trait App: Send + Sync + 'static {
 
     /// The kinds of background job the app runs.
     fn jobs(&self, _instance: &Arc<Instance>) -> Vec<JobKind> {
+        Vec::new()
+    }
+
+    /// Kinds of background job that run outside any transaction, because
+    /// they wait on the network. The kind must start with the app's id.
+    fn outside_jobs(&self, _instance: &Arc<Instance>) -> Vec<OutsideJobKind> {
         Vec::new()
     }
 

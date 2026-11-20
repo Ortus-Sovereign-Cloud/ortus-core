@@ -238,10 +238,19 @@ pub type Handler = Box<
     dyn for<'a> Fn(&'a Job, &'a mut dyn AsyncTx) -> BoxFuture<'a, Result<(), String>> + Send + Sync,
 >;
 
+/// A handler that runs outside any transaction: for work that waits on the
+/// network (delivering mail, calling another server), which must not hold
+/// the database's write lock. Its job is marked done afterwards in a short
+/// transaction of its own; the job's lease keeps two workers from running
+/// it at once, and it must still be safe to repeat after a crash.
+pub type OutsideHandler =
+    Box<dyn for<'a> Fn(&'a Job) -> BoxFuture<'a, Result<(), String>> + Send + Sync>;
+
 /// Takes jobs from the queue and runs their handlers.
 pub struct Worker {
     name: String,
     handlers: HashMap<String, Handler>,
+    outside: HashMap<String, OutsideHandler>,
     lease_ms: i64,
     retry_delay_ms: i64,
 }
@@ -252,6 +261,7 @@ impl Worker {
         Self {
             name: name.to_string(),
             handlers: HashMap::new(),
+            outside: HashMap::new(),
             lease_ms: 60_000,
             retry_delay_ms: 5_000,
         }
@@ -277,8 +287,18 @@ impl Worker {
     }
 
     /// The kinds of job this worker has a handler for.
+    /// Registers a handler that runs outside the transaction.
+    pub fn handle_outside(mut self, kind: &str, handler: OutsideHandler) -> Self {
+        self.outside.insert(kind.to_string(), handler);
+        self
+    }
+
     pub fn kinds(&self) -> Vec<&str> {
-        self.handlers.keys().map(String::as_str).collect()
+        self.handlers
+            .keys()
+            .chain(self.outside.keys())
+            .map(String::as_str)
+            .collect()
     }
 
     /// Runs at most one due job. Returns `false` when nothing was due.
@@ -297,7 +317,7 @@ impl Worker {
         let kinds: Vec<&str> = kinds
             .iter()
             .copied()
-            .filter(|kind| self.handlers.contains_key(*kind))
+            .filter(|kind| self.handlers.contains_key(*kind) || self.outside.contains_key(*kind))
             .collect();
         if kinds.is_empty() {
             // No handler could run what it took; an empty list of kinds
@@ -307,6 +327,32 @@ impl Worker {
         let Some(job) = claim(store, &self.name, &kinds, now_ms, self.lease_ms).await? else {
             return Ok(false);
         };
+        if let Some(handler) = self.outside.get(&job.kind) {
+            // The work first, holding no transaction; then a short one to
+            // mark it done (unless the lease was lost meanwhile).
+            let failure = match handler(&job).await {
+                Ok(()) => match start_completion(store, &job, &self.name, now_ms).await? {
+                    Some(tx) => tx.commit().await.err().map(|e| e.to_string()),
+                    None => None,
+                },
+                Err(message) => Some(message),
+            };
+            if let Some(message) = failure {
+                let delay = self
+                    .retry_delay_ms
+                    .saturating_mul(1 << (job.attempt - 1).clamp(0, 16));
+                fail(
+                    store,
+                    &job,
+                    &self.name,
+                    &message,
+                    now_ms,
+                    now_ms.saturating_add(delay),
+                )
+                .await?;
+            }
+            return Ok(true);
+        }
         let Some(mut tx) = start_completion(store, &job, &self.name, now_ms).await? else {
             return Ok(true);
         };

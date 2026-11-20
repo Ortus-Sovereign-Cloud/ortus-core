@@ -54,7 +54,10 @@ async fn facts(ortus: &Arc<Instance>) -> Result<Value, ApiError> {
     let unexpected: Vec<Value> = calls
         .iter()
         .filter(|c| {
+            // DNS lookups go to the resolver the operator set up (or the
+            // system's): infrastructure, not a third party.
             c["purpose"] != "sign_in"
+                && c["purpose"] != "dns"
                 && !configured.contains(c["host"].as_str().unwrap_or_default())
         })
         .cloned()

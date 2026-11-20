@@ -63,6 +63,15 @@ fn sovereignty(store: Arc<dyn AsyncStore>) {
     let facts: Value =
         serde_json::from_str(get("/api/v1/admin/sovereignty", &owner).body_text()).unwrap();
     assert_eq!(serde_json::json!([]), facts["outbound"]["unexpected"]);
+    // Lookups through the configured resolver are infrastructure.
+    block_on(ortus_core::outbound::note(
+        instance.store.as_ref(),
+        "dns",
+        "10.0.0.53:53",
+    ));
+    let facts: Value =
+        serde_json::from_str(get("/api/v1/admin/sovereignty", &owner).body_text()).unwrap();
+    assert_eq!(serde_json::json!([]), facts["outbound"]["unexpected"]);
 
     // The report: a file, with the audit chain verified now.
     let report = get("/api/v1/admin/sovereignty/report", &owner);
