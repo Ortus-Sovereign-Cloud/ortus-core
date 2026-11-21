@@ -6,6 +6,7 @@
 
 pub mod api;
 pub mod app;
+pub mod app_links;
 pub mod audit;
 pub mod auth;
 pub mod backup;
@@ -121,6 +122,7 @@ pub fn app(instance: Arc<Instance>) -> WithMiddleware<AsyncAppWithState<Arc<Inst
         .collect();
     let routes = api::register(AsyncAppWithState::new(instance), &apps);
     let routes = auth::saml::register(auth::external::register(oidc::routes::register(routes)));
+    let routes = app_links::register(routes);
     let routes = dav::register(routes, &apps);
     web::register(routes, &apps)
         .wrap(RequestIdLayer::new())

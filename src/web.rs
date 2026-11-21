@@ -215,6 +215,7 @@ pub fn is_served(uri: &str, app_paths: &[String]) -> bool {
         || app_paths.iter().any(|app| under(app))
         || PROBES.contains(&path)
         || path == "/.well-known/openid-configuration"
+        || crate::app_links::PATHS.contains(&path)
         || (path.starts_with("/auth/saml/")
             && (path.ends_with("/start") || path.ends_with("/acs") || path.ends_with("/metadata"))
             && path.matches('/').count() == 4)

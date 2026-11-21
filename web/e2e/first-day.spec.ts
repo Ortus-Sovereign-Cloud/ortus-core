@@ -55,6 +55,29 @@ test.describe("an invitation link", () => {
   });
 });
 
+test("on a phone, an invitation offers the Ortus app first and waits", async ({ page, browser }) => {
+  const email = `phone-${Date.now()}-${Math.floor(Math.random() * 1e6)}@ministry.example`;
+  const invited = await page.request.post("/api/v1/admin/users", { headers: { "X-Requested-With": "ortus" }, data: { email, name: "Olena Hrytsenko" } });
+  expect(invited.status()).toBe(200);
+  const link = new URL(((await invited.json()) as { link: string }).link);
+  const context = await browser.newContext({
+    storageState: { cookies: [], origins: [] },
+    userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+  });
+  const phone = await context.newPage();
+  await phone.goto(link.pathname + link.hash);
+  const origin = new URL(phone.url()).origin;
+  await expect(phone.getByRole("link", { name: en["accept.openApp"] })).toHaveAttribute(
+    "href",
+    `ortus://join?server=${encodeURIComponent(origin)}&code=${encodeURIComponent(link.hash.slice(1))}`,
+  );
+  await expect(phone.getByText(en["accept.noApp"])).toBeVisible();
+  // The link is still unused: this browser can take it instead.
+  await phone.getByRole("button", { name: en["accept.continueHere"] }).click();
+  await expect(phone).toHaveURL(/\/welcome$/);
+  await context.close();
+});
+
 test.describe("with a test mail server", () => {
   test.skip(!process.env.ORTUS_TEST_SMTP, "needs a test mail server (ORTUS_TEST_SMTP, ORTUS_TEST_MAILPIT)");
 
