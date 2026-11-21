@@ -1562,7 +1562,7 @@
             "session": []
           }
         ],
-        "summary": "Invite someone: {email, name, role, groups, language}. They get a link by mail.",
+        "summary": "Invite someone: {email, name, role, groups, language, send_to}. The answer has the link (and as a QR code), when it expires, and where the letter went (send_to, a personal address; none when the address is a mailbox here).",
         "tags": [
           "people"
         ]
@@ -1652,6 +1652,88 @@
         ]
       }
     },
+    "/api/v1/admin/users/:id/invitation": {
+      "delete": {
+        "description": "For administrators and owners.",
+        "operationId": "withdrawInvitation",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Withdraw someone's invitation: its link stops working.",
+        "tags": [
+          "people"
+        ]
+      },
+      "post": {
+        "description": "For administrators and owners.",
+        "operationId": "renewInvitation",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "A new link for someone invited (the old one stops working): {send (default true), send_to}.",
+        "tags": [
+          "people"
+        ]
+      }
+    },
     "/api/v1/admin/users/:id/reset": {
       "post": {
         "description": "For administrators and owners.",
@@ -1688,7 +1770,7 @@
             "session": []
           }
         ],
-        "summary": "Sign a person out everywhere, remove their sign-in methods and send a new invitation.",
+        "summary": "Sign a person out everywhere, remove their sign-in methods and make a new invitation: {send, send_to}, both optional.",
         "tags": [
           "people"
         ]
@@ -1730,7 +1812,7 @@
             "session": []
           }
         ],
-        "summary": "Invite many: CSV text, one per line: email,name[,role[,group;group]].",
+        "summary": "Invite many: CSV text, one per line: email,name[,role[,group;group[,personal email]]]. The answer lists each invitation's link.",
         "tags": [
           "people"
         ]

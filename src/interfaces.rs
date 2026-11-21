@@ -99,6 +99,14 @@ pub struct AgendaItem {
     pub item: ItemRef,
 }
 
+/// Provided by the mail app; used by the admin console's invitations: an
+/// address in one of this installation's mail domains is a mailbox here,
+/// which its person cannot read before they join.
+pub trait MailDomains: Send + Sync {
+    /// Whether `domain` (lower case) is one of this installation's.
+    fn is_ours<'a>(&'a self, domain: &'a str) -> BoxFuture<'a, bool>;
+}
+
 /// Provided by the mail app; used by the calendar to send invitations
 /// and answers to people outside (iMIP), past the label policy.
 pub trait Mailer: Send + Sync {

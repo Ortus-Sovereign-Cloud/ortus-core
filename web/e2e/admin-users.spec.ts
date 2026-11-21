@@ -23,7 +23,12 @@ test("the owner invites someone, imports a list and suspends a person", async ({
   await page.getByLabel(en["people.email"], { exact: true }).fill("iryna@ministry.example");
   await page.getByLabel(en["people.groupsField"]).fill("Procurement");
   await page.getByRole("button", { name: en["people.send"] }).click();
-  await expect(page.getByRole("status")).toHaveText(en["people.invited"]);
+  const sent = page.getByRole("dialog", { name: en["people.invitationFor"].replace("{name}", "Iryna Savchenko") });
+  // With a test mail server the letter goes; without one, the link is the way.
+  const said = process.env.ORTUS_TEST_SMTP ? en["people.sentTo"].replace("{address}", "iryna@ministry.example") : en["people.notSent.no_mail"];
+  await expect(sent.getByRole("status")).toHaveText(said);
+  await expect(sent.getByLabel(en["people.link"], { exact: true })).toHaveValue(/\/welcome\/accept#/);
+  await sent.getByRole("button", { name: en["people.done"] }).click();
   const iryna = page.getByRole("row").filter({ hasText: "iryna@ministry.example" });
   await expect(iryna).toContainText(en["people.state.invited"]);
 

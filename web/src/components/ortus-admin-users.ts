@@ -1,5 +1,6 @@
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { LocalizeController } from "@lit-material/core/localize.js";
 import { ApiError, call, type Me } from "../api.js";
 import { t } from "../i18n.js";
@@ -17,6 +18,22 @@ interface Person {
   quota_bytes: number | null;
   used_bytes: number;
   groups: string[];
+  /** Someone invited: until when their link works, and where its letter went. */
+  invitation?: { expires_at: number | null; send_to: string | null } | null;
+}
+
+/** A new invitation link, as the server answers it. */
+interface Sent {
+  link: string;
+  expires_at: number;
+  sent_to: string | null;
+  not_sent: "own_mailbox" | "no_mail" | "not_asked" | null;
+  qr_svg: string | null;
+}
+
+interface Invited extends Sent {
+  email: string;
+  name: string;
 }
 
 interface Listing {
@@ -238,6 +255,36 @@ export class OrtusAdminUsers extends LitElement {
         color: var(--ortus-teal);
         font-size: 14px;
       }
+      .hint {
+        margin-block: 6px 0;
+        color: var(--ortus-text-3);
+        font-size: 13px;
+      }
+      .warning {
+        margin-block: 6px 0;
+        color: var(--ortus-amber, #f5b14c);
+        font-size: 13px;
+      }
+      .link {
+        display: flex;
+        gap: 8px;
+        margin-block-start: 8px;
+      }
+      .link input {
+        flex: 1;
+        min-inline-size: 0;
+      }
+      .qr {
+        display: block;
+        inline-size: 200px;
+        margin: 16px auto 0;
+      }
+      .qr svg {
+        display: block;
+        inline-size: 100%;
+        block-size: auto;
+        border-radius: 12px;
+      }
       @media (max-width: 1100px) {
         :host {
           flex-direction: column;
@@ -263,6 +310,14 @@ export class OrtusAdminUsers extends LitElement {
   @state() private devices: Device[] = [];
   @state() private directory: { connected: boolean; url?: string; base_dn?: string; last_sync_at?: number | null } | undefined;
   @state() private message: { key: MessageKey; error: boolean; args?: Record<string, string | number> } | undefined;
+  /** The invitation just made (shown with its link and QR code). */
+  @state() private sent: { name: string; email: string; sent: Sent } | undefined;
+  @state() private copied = false;
+  /** This installation's mail domains (an address there is a mailbox here). */
+  @state() private ourDomains: string[] = [];
+  @state() private inviteEmail = "";
+  /** The links of the last CSV import, for a list to hand out. */
+  @state() private imported: Invited[] = [];
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -287,13 +342,15 @@ export class OrtusAdminUsers extends LitElement {
     if (this.query) params.set("q", this.query);
     if (this.filter) params.set("filter", this.filter);
     const load = ++this.loads;
-    const [listing, directory] = await Promise.all([
+    const [listing, directory, domains] = await Promise.all([
       call<Listing>("GET", `/admin/users?${params}`),
       call<{ connected: boolean }>("GET", "/admin/directory").catch(() => undefined),
+      call<{ domains: { domain: string }[] }>("GET", "/mail/admin/domains").catch(() => undefined),
     ]);
     if (load !== this.loads) return;
     this.listing = listing;
     this.directory = directory;
+    this.ourDomains = (domains?.domains ?? []).map((d) => d.domain.toLowerCase());
     if (this.selected) this.selected = listing.users.find((u) => u.id === this.selected!.id) ?? this.selected;
   }
 
@@ -302,16 +359,36 @@ export class OrtusAdminUsers extends LitElement {
     this.devices = (await call<{ devices: Device[] }>("GET", `/admin/users/${person.id}/devices`)).devices;
   }
 
+  /** Runs `work`; says `done`, or what `work` answers (nothing: the dialog says it). */
   private async act(work: () => Promise<unknown>, done: MessageKey): Promise<void> {
     this.message = undefined;
     try {
-      await work();
-      this.message = { key: done, error: false };
+      const said = await work();
+      const key = typeof said === "string" ? (said as MessageKey) : said === null ? undefined : done;
+      this.message = key ? { key, error: false } : undefined;
       await this.load();
     } catch (error) {
       const code = error instanceof ApiError ? error.code : "";
-      this.message = { key: code === "last_owner" ? "people.lastOwner" : code === "conflict" ? "people.exists" : code === "forbidden" ? "people.forbidden" : "people.failed", error: true };
+      this.message = {
+        key:
+          code === "last_owner"
+            ? "people.lastOwner"
+            : code === "conflict"
+              ? "people.exists"
+              : code === "forbidden"
+                ? "people.forbidden"
+                : code === "bad_request"
+                  ? "people.badAddress"
+                  : "people.failed",
+        error: true,
+      };
     }
+  }
+
+  /** Whether an address is a mailbox here (one of our mail domains). */
+  private ownMailbox(email: string): boolean {
+    const domain = email.trim().toLowerCase().split("@")[1];
+    return !!domain && this.ourDomains.includes(domain);
   }
 
   private invite(event: SubmitEvent): void {
@@ -319,11 +396,76 @@ export class OrtusAdminUsers extends LitElement {
     const form = event.target as HTMLFormElement;
     const data = new FormData(form);
     const groups = String(data.get("groups") ?? "").split(",").map((g) => g.trim()).filter(Boolean);
+    const sendTo = String(data.get("send_to") ?? "").trim();
     void this.act(async () => {
-      await call("POST", "/admin/users", { email: data.get("email"), name: data.get("name"), role: data.get("role"), groups, language: this.localize.lang });
+      const answer = await call<Person & Sent>("POST", "/admin/users", {
+        email: data.get("email"),
+        name: data.get("name"),
+        role: data.get("role"),
+        groups,
+        language: this.localize.lang,
+        ...(sendTo ? { send_to: sendTo } : {}),
+      });
       form.reset();
+      this.inviteEmail = "";
       this.renderRoot.querySelector<HTMLDialogElement>("#invite")?.close();
+      this.show(answer.name, answer.email, answer);
+      // The dialog says what happened.
+      return null;
     }, "people.invited");
+  }
+
+  /** Shows a new invitation's link, QR code and where its letter went. */
+  private show(name: string, email: string, sent: Sent): void {
+    this.sent = { name, email, sent };
+    this.copied = false;
+    void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLDialogElement>("#sent")?.showModal());
+  }
+
+  /** A new link for someone invited: the letter again, or only the link. */
+  private renew(person: Person, send: boolean): void {
+    void this.act(async () => {
+      const sent = await call<Sent>("POST", `/admin/users/${person.id}/invitation`, { send });
+      this.show(person.name, person.email, sent);
+      // The dialog says what happened.
+      return null;
+    }, "people.invited");
+  }
+
+  private reset(person: Person): void {
+    void this.act(async () => {
+      const sent = await call<Sent>("POST", `/admin/users/${person.id}/reset`);
+      this.show(person.name, person.email, sent);
+    }, "people.resetDone");
+  }
+
+  private async copyLink(): Promise<void> {
+    if (!this.sent) return;
+    try {
+      await navigator.clipboard.writeText(this.sent.sent.link);
+      this.copied = true;
+    } catch {
+      this.renderRoot.querySelector<HTMLInputElement>("#sent-link")?.select();
+    }
+  }
+
+  private date(ms: number | null | undefined): string {
+    return ms ? new Intl.DateTimeFormat(this.localize.lang, { dateStyle: "medium", timeStyle: "short" }).format(ms) : "";
+  }
+
+  /** The last import's links as a CSV file to save. */
+  private downloadLinks(): void {
+    const quote = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    const lines = [
+      "email,name,link,letter_to,valid_until",
+      ...this.imported.map((i) => [i.email, i.name, i.link, i.sent_to ?? "", new Date(i.expires_at).toISOString()].map(quote).join(",")),
+    ];
+    const url = URL.createObjectURL(new Blob([lines.join("\n") + "\n"], { type: "text/csv" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "ortus-invitations.csv";
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   private async importFile(event: Event): Promise<void> {
@@ -334,7 +476,8 @@ export class OrtusAdminUsers extends LitElement {
     input.value = "";
     this.message = undefined;
     try {
-      const result = await call<{ added: string[]; failed: { line: number }[] }>("POST", "/admin/users/import", text);
+      const result = await call<{ added: string[]; invited?: Invited[]; failed: { line: number }[] }>("POST", "/admin/users/import", text);
+      this.imported = result.invited ?? [];
       this.message = { key: "people.imported", error: result.failed.length > 0, args: { added: result.added.length, failed: result.failed.length } };
       await this.load();
     } catch {
@@ -412,7 +555,24 @@ export class OrtusAdminUsers extends LitElement {
         ${this.devices.length
           ? this.devices.map((d) => html`<p class="muted">${d.agent.split(" ")[0] || d.methods} · ${this.ago(d.last_seen_at)}</p>`)
           : html`<p class="muted">${t(this.localize, "people.noDevices")}</p>`}
-        <button class="button" @click=${() => this.act(() => call("POST", `/admin/users/${person.id}/reset`), "people.resetDone")}>${t(this.localize, "people.reset")}</button>
+        ${person.state === "invited"
+          ? html`
+              <h3>${t(this.localize, "people.invitation")}</h3>
+              <p class="muted">
+                ${person.invitation?.expires_at
+                  ? t(this.localize, "people.invitationOpen", { date: this.date(person.invitation.expires_at) })
+                  : t(this.localize, "people.noInvitation")}
+                ${person.invitation?.send_to ? html`<br />${t(this.localize, "people.invitationLetter", { address: person.invitation.send_to })}` : nothing}
+              </p>
+              <button class="button" @click=${() => this.renew(person, true)}>${t(this.localize, "people.sendAgain")}</button>
+              <button class="button" @click=${() => this.renew(person, false)}>${t(this.localize, "people.newLink")}</button>
+              ${person.invitation
+                ? html`<button class="button danger" @click=${() => this.act(() => call("DELETE", `/admin/users/${person.id}/invitation`), "people.withdrawn")}>
+                    ${t(this.localize, "people.withdraw")}
+                  </button>`
+                : nothing}
+            `
+          : html`<button class="button" @click=${() => this.reset(person)}>${t(this.localize, "people.reset")}</button>`}
         ${person.state === "suspended"
           ? html`<button class="button" @click=${() => this.change(person, { state: "active" }, "people.reactivated")}>${t(this.localize, "people.reactivate")}</button>`
           : html`<button class="button danger" ?disabled=${person.id === this.me?.id} @click=${() => this.change(person, { state: "suspended" }, "people.suspended")}>${t(this.localize, "people.suspend")}</button>`}
@@ -444,6 +604,9 @@ export class OrtusAdminUsers extends LitElement {
         </div>
         ${this.message
           ? html`<p class=${this.message.error ? "error" : "status"} role=${this.message.error ? "alert" : "status"}>${t(this.localize, this.message.key, this.message.args)}</p>`
+          : nothing}
+        ${this.imported.length
+          ? html`<p><button class="button" @click=${this.downloadLinks}>${t(this.localize, "people.downloadLinks")}</button></p>`
           : nothing}
         <div class="filters">
           <input
@@ -515,7 +678,12 @@ export class OrtusAdminUsers extends LitElement {
           <label for="invite-name">${t(this.localize, "people.name")}</label>
           <input id="invite-name" name="name" required maxlength="200" />
           <label for="invite-email">${t(this.localize, "people.email")}</label>
-          <input id="invite-email" name="email" type="email" required />
+          <input id="invite-email" name="email" type="email" required @input=${(e: Event) => (this.inviteEmail = (e.target as HTMLInputElement).value)} />
+          <label for="invite-send-to">${t(this.localize, "people.sendTo")}</label>
+          <input id="invite-send-to" name="send_to" type="email" aria-describedby="invite-send-to-hint" />
+          ${this.ownMailbox(this.inviteEmail)
+            ? html`<p id="invite-send-to-hint" class="warning">${t(this.localize, "people.ownMailbox", { email: this.inviteEmail.trim() })}</p>`
+            : html`<p id="invite-send-to-hint" class="hint">${t(this.localize, "people.sendToHint")}</p>`}
           <label for="invite-role">${t(this.localize, "people.role")}</label>
           <select id="invite-role" name="role">
             <option value="member">${t(this.localize, "people.member")}</option>
@@ -529,6 +697,30 @@ export class OrtusAdminUsers extends LitElement {
             <button class="button primary">${t(this.localize, "people.send")}</button>
           </div>
         </form>
+      </dialog>
+      <dialog id="sent" aria-labelledby="sent-title" @close=${() => (this.sent = undefined)}>
+        ${this.sent
+          ? html`
+              <h2 id="sent-title">${t(this.localize, "people.invitationFor", { name: this.sent.name })}</h2>
+              <p class=${this.sent.sent.sent_to ? "status" : "warning"} role="status">
+                ${this.sent.sent.sent_to
+                  ? t(this.localize, "people.sentTo", { address: this.sent.sent.sent_to })
+                  : t(this.localize, `people.notSent.${this.sent.sent.not_sent ?? "no_mail"}` as MessageKey, { email: this.sent.email })}
+              </p>
+              <label for="sent-link">${t(this.localize, "people.link")}</label>
+              <div class="link">
+                <input id="sent-link" readonly .value=${this.sent.sent.link} @focus=${(e: Event) => (e.target as HTMLInputElement).select()} />
+                <button class="button" @click=${this.copyLink}>${this.copied ? t(this.localize, "people.copied") : t(this.localize, "people.copy")}</button>
+              </div>
+              <p class="hint">${t(this.localize, "people.validUntil", { date: this.date(this.sent.sent.expires_at) })}</p>
+              ${this.sent.sent.qr_svg
+                ? html`<span class="qr" role="img" aria-label=${t(this.localize, "people.qr")}>${unsafeSVG(this.sent.sent.qr_svg)}</span>`
+                : nothing}
+              <div class="row">
+                <button class="button primary" @click=${() => this.renderRoot.querySelector<HTMLDialogElement>("#sent")?.close()}>${t(this.localize, "people.done")}</button>
+              </div>
+            `
+          : nothing}
       </dialog>
     `;
   }

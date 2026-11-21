@@ -50,8 +50,14 @@ pub fn already_signed_up(language: &str, site: &str) -> (String, String) {
     (subject.to_string(), body.replace("{site}", site))
 }
 
-/// The invitation to a new account.
-pub fn invitation(language: &str, inviter: &str, link: &str) -> (String, String) {
+/// The invitation to a new account. `account` names the account's address
+/// when the letter goes to another one (a personal address).
+pub fn invitation(
+    language: &str,
+    inviter: &str,
+    link: &str,
+    account: Option<&str>,
+) -> (String, String) {
     let (subject, body) = match language {
         "pl" => ("{inviter} zaprasza Cię do Ortus", "{inviter} założył(a) dla Ciebie konto w Ortus.\n\nOtwórz ten link, aby je aktywować i dodać klucz dostępu:\n\n    {link}\n\nLink działa przez 7 dni i tylko raz."),
         "uk" => ("{inviter} запрошує вас до Ortus", "{inviter} створив(ла) для вас обліковий запис в Ortus.\n\nВідкрийте це посилання, щоб активувати його й додати ключ доступу:\n\n    {link}\n\nПосилання діє 7 днів і лише один раз."),
@@ -60,15 +66,51 @@ pub fn invitation(language: &str, inviter: &str, link: &str) -> (String, String)
         "ar" => ("يدعوك {inviter} إلى Ortus", "أنشأ {inviter} حسابًا لك في Ortus.\n\nافتح هذا الرابط لتفعيله وإضافة مفتاح مرور:\n\n    {link}\n\nيعمل الرابط لمدة 7 أيام ولمرة واحدة."),
         _ => ("{inviter} invites you to Ortus", "{inviter} made an Ortus account for you.\n\nOpen this link to activate it and add a passkey:\n\n    {link}\n\nThe link works for 7 days, once."),
     };
-    (
-        subject.replace("{inviter}", inviter),
-        body.replace("{inviter}", inviter).replace("{link}", link),
-    )
+    let account_line = account.map(|account| {
+        let line = match language {
+            "pl" => "Twoje konto: {account}",
+            "uk" => "Ваш обліковий запис: {account}",
+            "de" => "Ihr Konto: {account}",
+            "fr" => "Votre compte : {account}",
+            "ar" => "حسابك: {account}",
+            _ => "Your account: {account}",
+        };
+        format!("\n\n{}", line.replace("{account}", account))
+    });
+    let body = body.replace("{inviter}", inviter).replace("{link}", link);
+    // After the first paragraph (who made the account).
+    let body = match (account_line, body.split_once("\n\n")) {
+        (Some(line), Some((first, rest))) => format!("{first}{line}\n\n{rest}"),
+        _ => body,
+    };
+    (subject.replace("{inviter}", inviter), body)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_letter_to_another_address_names_the_account() {
+        for lang in ["en", "pl", "uk", "de", "fr", "ar"] {
+            let (_, body) = invitation(
+                lang,
+                "Taras",
+                "https://ortus.cc/welcome/accept#t",
+                Some("iryna@ministry.example"),
+            );
+            let (first, rest) = body.split_once("\n\n").unwrap();
+            assert!(
+                first.contains("Taras")
+                    && rest.starts_with("")
+                    && rest.contains("iryna@ministry.example"),
+                "{lang}: {body}"
+            );
+            assert!(body.contains("https://ortus.cc/welcome/accept#t"), "{lang}");
+            let (_, plain) = invitation(lang, "Taras", "https://ortus.cc/welcome/accept#t", None);
+            assert!(!plain.contains("iryna@"), "{lang}");
+        }
+    }
 
     #[test]
     fn every_language_has_its_text() {
