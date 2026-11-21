@@ -229,6 +229,8 @@ async fn me_admin(request: &Request, ortus: &Arc<Instance>) -> Result<User, ApiE
 /// on), when it stops working, and where its letter went.
 pub struct Sent {
     pub link: String,
+    /// The shared app link (opens the Ortus app on any installation).
+    pub app_link: Option<String>,
     pub expires_at: i64,
     /// The address the letter went to, if one went.
     pub sent_to: Option<String>,
@@ -241,7 +243,8 @@ pub struct Sent {
 impl Sent {
     /// The answer's fields, with the link as a QR code too.
     fn json(&self) -> Value {
-        let qr = qrcode::QrCode::new(self.link.as_bytes())
+        // Scanned with a phone, the app link opens the app (or the page).
+        let qr = qrcode::QrCode::new(self.app_link.as_ref().unwrap_or(&self.link).as_bytes())
             .map(|code| {
                 code.render::<qrcode::render::svg::Color>()
                     .min_dimensions(200, 200)
@@ -252,6 +255,7 @@ impl Sent {
             .ok();
         json!({
             "link": self.link,
+            "app_link": self.app_link,
             "expires_at": self.expires_at,
             "sent_to": self.sent_to,
             "not_sent": self.not_sent,
@@ -315,8 +319,11 @@ async fn send_invite(
         )
         .await?;
     let link = format!("{}/welcome/accept#{token}", ortus.config.public_url);
+    let app_link = crate::app_links::app_link_base()
+        .map(|base| crate::app_links::app_link(&base, &ortus.config.public_url, &token));
     let mut sent = Sent {
         link,
+        app_link,
         expires_at,
         sent_to: None,
         not_sent: None,
@@ -343,6 +350,7 @@ async fn send_invite(
         inviter,
         &sent.link,
         elsewhere,
+        sent.app_link.as_deref(),
     );
     mail_out::queue(
         store,
@@ -500,7 +508,7 @@ async fn import(request: &Request, ortus: &Arc<Instance>) -> Result<Response, Ap
         match invite_one(ortus, &me, &input).await {
             Ok((user, sent)) => {
                 invited.push(json!({
-                    "email": user.email, "name": user.name, "link": sent.link,
+                    "email": user.email, "name": user.name, "link": sent.link, "app_link": sent.app_link,
                     "expires_at": sent.expires_at, "sent_to": sent.sent_to, "not_sent": sent.not_sent,
                 }));
                 added.push(user.email);

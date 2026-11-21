@@ -57,6 +57,7 @@ pub fn invitation(
     inviter: &str,
     link: &str,
     account: Option<&str>,
+    app_link: Option<&str>,
 ) -> (String, String) {
     let (subject, body) = match language {
         "pl" => ("{inviter} zaprasza Cię do Ortus", "{inviter} założył(a) dla Ciebie konto w Ortus.\n\nOtwórz ten link, aby je aktywować i dodać klucz dostępu:\n\n    {link}\n\nLink działa przez 7 dni i tylko raz."),
@@ -77,7 +78,19 @@ pub fn invitation(
         };
         format!("\n\n{}", line.replace("{account}", account))
     });
-    let body = body.replace("{inviter}", inviter).replace("{link}", link);
+    let mut body = body.replace("{inviter}", inviter).replace("{link}", link);
+    // On a phone with the app: its own link, which opens it directly.
+    if let Some(app_link) = app_link {
+        let line = match language {
+            "pl" => "Na telefonie z aplikacją Ortus:",
+            "uk" => "На телефоні із застосунком Ortus:",
+            "de" => "Auf einem Telefon mit der Ortus-App:",
+            "fr" => "Sur un téléphone avec l’app Ortus :",
+            "ar" => "على هاتف عليه تطبيق Ortus:",
+            _ => "On a phone with the Ortus app:",
+        };
+        body.push_str(&format!("\n\n{line}\n\n    {app_link}"));
+    }
     // After the first paragraph (who made the account).
     let body = match (account_line, body.split_once("\n\n")) {
         (Some(line), Some((first, rest))) => format!("{first}{line}\n\n{rest}"),
@@ -98,6 +111,7 @@ mod tests {
                 "Taras",
                 "https://ortus.cc/welcome/accept#t",
                 Some("iryna@ministry.example"),
+                None,
             );
             let (first, rest) = body.split_once("\n\n").unwrap();
             assert!(
@@ -107,7 +121,14 @@ mod tests {
                 "{lang}: {body}"
             );
             assert!(body.contains("https://ortus.cc/welcome/accept#t"), "{lang}");
-            let (_, plain) = invitation(lang, "Taras", "https://ortus.cc/welcome/accept#t", None);
+            let (_, plain) = invitation(
+                lang,
+                "Taras",
+                "https://ortus.cc/welcome/accept#t",
+                None,
+                Some("https://join.ortus.cc/i#s=x&c=t"),
+            );
+            assert!(plain.contains("https://join.ortus.cc/i#s=x&c=t"), "{lang}");
             assert!(!plain.contains("iryna@"), "{lang}");
         }
     }

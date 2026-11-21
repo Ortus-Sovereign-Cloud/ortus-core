@@ -25,6 +25,8 @@ interface Person {
 /** A new invitation link, as the server answers it. */
 interface Sent {
   link: string;
+  /** The shared link that opens the Ortus app (in the QR code). */
+  app_link?: string | null;
   expires_at: number;
   sent_to: string | null;
   not_sent: "own_mailbox" | "no_mail" | "not_asked" | null;
@@ -714,7 +716,8 @@ export class OrtusAdminUsers extends LitElement {
               </div>
               <p class="hint">${t(this.localize, "people.validUntil", { date: this.date(this.sent.sent.expires_at) })}</p>
               ${this.sent.sent.qr_svg
-                ? html`<span class="qr" role="img" aria-label=${t(this.localize, "people.qr")}>${unsafeSVG(this.sent.sent.qr_svg)}</span>`
+                ? html`<span class="qr" role="img" aria-label=${t(this.localize, "people.qr")}>${unsafeSVG(this.sent.sent.qr_svg)}</span>
+                    <p class="hint">${t(this.localize, "people.qrHint")}</p>`
                 : nothing}
               <div class="row">
                 <button class="button primary" @click=${() => this.renderRoot.querySelector<HTMLDialogElement>("#sent")?.close()}>${t(this.localize, "people.done")}</button>

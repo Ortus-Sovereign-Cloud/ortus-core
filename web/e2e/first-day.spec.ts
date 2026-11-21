@@ -78,6 +78,36 @@ test("on a phone, an invitation offers the Ortus app first and waits", async ({ 
   await context.close();
 });
 
+test.describe("the shared app link of an invitation", () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+  const code = "GrZQMSTSLFQ-bZjJLte7CE2wAbAZye7iS0osZU1a8os";
+
+  test("names the installation and goes there only when asked", async ({ page }) => {
+    const server = "https://work.ministry.example";
+    await page.goto(`/i#s=${encodeURIComponent(server)}&c=${code}`);
+    await expect(page.getByText(en["relay.lead"].replace("{host}", "work.ministry.example"))).toBeVisible();
+    await expect(page.getByRole("link", { name: en["relay.continue"].replace("{host}", "work.ministry.example") })).toHaveAttribute("href", `${server}/welcome/accept#${code}`);
+    await expect(page).toHaveURL(/\/i$/); // the code left the address bar
+  });
+
+  test("on a phone, offers the app first", async ({ browser }) => {
+    const context = await browser.newContext({ storageState: { cookies: [], origins: [] }, userAgent: "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Mobile Safari/537.36" });
+    const phone = await context.newPage();
+    const server = "https://work.ministry.example";
+    await phone.goto(`/i#s=${encodeURIComponent(server)}&c=${code}`);
+    await expect(phone.getByRole("link", { name: en["accept.openApp"] })).toHaveAttribute("href", `ortus://join?server=${encodeURIComponent(server)}&code=${code}`);
+    await context.close();
+  });
+
+  test("refuses what is not an invitation", async ({ page }) => {
+    for (const fragment of [`s=${encodeURIComponent("javascript:alert(1)")}&c=${code}`, `s=${encodeURIComponent("http://evil.example")}&c=${code}`, "s=https%3A%2F%2Fok.example&c=short", ""]) {
+      await page.goto(`/i#${fragment}`);
+      await expect(page.getByRole("alert")).toHaveText(en["relay.broken"]);
+      await expect(page.getByRole("link", { name: /Continue to/ })).toHaveCount(0);
+    }
+  });
+});
+
 test.describe("with a test mail server", () => {
   test.skip(!process.env.ORTUS_TEST_SMTP, "needs a test mail server (ORTUS_TEST_SMTP, ORTUS_TEST_MAILPIT)");
 

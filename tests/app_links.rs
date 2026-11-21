@@ -18,7 +18,13 @@ fn phones_learn_that_invitations_open_in_the_app() {
     assert_eq!("XD7JHZ5DB3.cc.ortus.app", details["appIDs"][0], "{apple}");
     assert_eq!(
         "/welcome/accept", details["components"][0]["/"],
-        "only invitations"
+        "invitations"
+    );
+    assert_eq!("/i", details["components"][1]["/"], "the shared app link");
+    assert_eq!(
+        2,
+        details["components"].as_array().unwrap().len(),
+        "nothing else"
     );
 
     let android = client.get("/.well-known/assetlinks.json").send();
@@ -31,6 +37,15 @@ fn phones_learn_that_invitations_open_in_the_app() {
     assert_eq!(
         "delegate_permission/common.handle_all_urls",
         android[0]["relation"][0]
+    );
+
+    // The apps find the installation from a work email address.
+    let found = client.get("/.well-known/ortus").send();
+    assert_eq!(200, found.status());
+    let found: Value = serde_json::from_str(found.body_text()).unwrap();
+    assert_eq!(
+        instance.config.public_url,
+        found["server"].as_str().unwrap()
     );
 
     // Nothing else under /.well-known/ comes with them.

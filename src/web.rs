@@ -35,6 +35,8 @@ pub const SCREENS: &[&str] = &[
     "/sign-up",
     "/terms",
     "/welcome",
+    // The shared app link of an invitation (app_links).
+    "/i",
     "/apps",
     "/settings",
     "/admin",

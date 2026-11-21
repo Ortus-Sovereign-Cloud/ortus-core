@@ -3,6 +3,7 @@ import { customElement, state } from "lit/decorators.js";
 import { session, setupNeeded, site, type Me } from "../api.js";
 import { startPreferences } from "../preferences.js";
 import "./ortus-accept.js";
+import "./ortus-relay.js";
 import "./ortus-setup.js";
 import "./ortus-shell.js";
 import "./ortus-sign-in.js";
@@ -19,6 +20,7 @@ type View =
   | { kind: "website"; signupOpen: boolean }
   | { kind: "app"; me: Me }
   | { kind: "accept" }
+  | { kind: "relay" }
   | { kind: "public"; element: HTMLElement }
   | { kind: "failed" };
 
@@ -43,6 +45,11 @@ export class OrtusRoot extends LitElement {
     // An invitation link signs its person in, whoever was signed in before.
     if (location.pathname === "/welcome/accept") {
       this.view = { kind: "accept" };
+      return;
+    }
+    // The shared app link of an invitation, when the app did not take it.
+    if (location.pathname === "/i") {
+      this.view = { kind: "relay" };
       return;
     }
     // Pages anyone may read, signed in or not.
@@ -114,6 +121,8 @@ export class OrtusRoot extends LitElement {
         return html`<ortus-terms></ortus-terms>`;
       case "accept":
         return html`<ortus-accept></ortus-accept>`;
+      case "relay":
+        return html`<ortus-relay></ortus-relay>`;
       case "website":
         return html`<ortus-website
           .signupOpen=${this.view.signupOpen}

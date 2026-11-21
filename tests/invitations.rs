@@ -94,6 +94,20 @@ fn an_invitation_reaches_its_person() {
         .as_str()
         .unwrap()
         .contains("/welcome/accept#"));
+    // The shared app link: the installation and the same code, after the hash.
+    let code = outside["link"]
+        .as_str()
+        .unwrap()
+        .rsplit_once('#')
+        .unwrap()
+        .1
+        .to_string();
+    let app_link = outside["app_link"].as_str().unwrap();
+    assert!(
+        app_link.starts_with("https://join.ortus.cc/i#s="),
+        "{app_link}"
+    );
+    assert!(app_link.ends_with(&format!("&c={code}")), "{app_link}");
     assert!(
         outside["qr_svg"].as_str().unwrap().starts_with("<?xml")
             || outside["qr_svg"].as_str().unwrap().contains("<svg")
