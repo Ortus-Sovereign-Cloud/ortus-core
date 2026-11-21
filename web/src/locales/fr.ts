@@ -38,6 +38,8 @@ const fr: Messages = {
   "notify.t.suggestion": "{who} a suggéré une modification dans {what}",
   "notify.t.record": "Nouvel enregistrement au dossier {case}",
   "notify.t.invite": "{who} vous a invité à {what}",
+  "notify.t.mailDelayed": "Votre message à {to} est retardé ; Ortus continue d’essayer",
+  "notify.t.mailNotDelivered": "Votre message à {to} n’a pas été remis",
   "notify.d.due": "échéance {time}",
   "notify.d.from": "{from} dans {where}",
   "language.label": "Langue",

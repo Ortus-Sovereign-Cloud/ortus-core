@@ -39,6 +39,8 @@ const en = {
   "notify.t.suggestion": "{who} suggested an edit in {what}",
   "notify.t.record": "New record filed to case {case}",
   "notify.t.invite": "{who} invited you to {what}",
+  "notify.t.mailDelayed": "Your message to {to} is delayed; Ortus keeps trying",
+  "notify.t.mailNotDelivered": "Your message to {to} was not delivered",
   "notify.d.due": "due {time}",
   "notify.d.from": "{from} in {where}",
   "language.label": "Language",

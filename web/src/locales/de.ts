@@ -38,6 +38,8 @@ const de: Messages = {
   "notify.t.suggestion": "{who} hat eine Änderung in {what} vorgeschlagen",
   "notify.t.record": "Neuer Eintrag zum Vorgang {case}",
   "notify.t.invite": "{who} hat dich zu {what} eingeladen",
+  "notify.t.mailDelayed": "Ihre Nachricht an {to} verzögert sich; Ortus versucht es weiter",
+  "notify.t.mailNotDelivered": "Ihre Nachricht an {to} wurde nicht zugestellt",
   "notify.d.due": "fällig {time}",
   "notify.d.from": "{from} in {where}",
   "language.label": "Sprache",

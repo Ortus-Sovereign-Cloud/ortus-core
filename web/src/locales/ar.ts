@@ -38,6 +38,8 @@ const ar: Messages = {
   "notify.t.suggestion": "اقترح {who} تعديلًا في {what}",
   "notify.t.record": "سجل جديد في القضية {case}",
   "notify.t.invite": "دعاك {who} إلى {what}",
+  "notify.t.mailDelayed": "رسالتك إلى {to} متأخرة؛ يواصل Ortus المحاولة",
+  "notify.t.mailNotDelivered": "لم تُسلَّم رسالتك إلى {to}",
   "notify.d.due": "الموعد {time}",
   "notify.d.from": "{from} في {where}",
   "language.label": "اللغة",
