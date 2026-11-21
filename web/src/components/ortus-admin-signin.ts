@@ -163,10 +163,10 @@ export class OrtusAdminSignIn extends LitElement {
       }
       select {
         block-size: 40px;
-        padding-inline: 12px;
+        padding-inline: 12px 34px;
         border-radius: 10px;
         border: 1px solid var(--ortus-line-input);
-        background: var(--ortus-surface-2);
+        background-color: var(--ortus-surface-2);
         color: var(--ortus-text);
         font: inherit;
       }

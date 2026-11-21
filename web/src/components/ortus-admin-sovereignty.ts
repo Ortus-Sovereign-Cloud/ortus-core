@@ -252,10 +252,10 @@ export class OrtusAdminSovereignty extends LitElement {
       }
       select {
         block-size: 34px;
-        padding-inline: 8px;
+        padding-inline: 8px 34px;
         border-radius: 8px;
         border: 1px solid var(--ortus-line-input);
-        background: var(--ortus-surface-2);
+        background-color: var(--ortus-surface-2);
         color: var(--ortus-text);
         font: inherit;
         font-size: 14px;

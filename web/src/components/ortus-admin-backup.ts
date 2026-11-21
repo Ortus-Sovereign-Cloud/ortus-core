@@ -108,14 +108,19 @@ export class OrtusAdminBackup extends LitElement {
         min-inline-size: 0;
         max-inline-size: 100%;
         padding: 0;
+        padding-inline-end: 18px;
         border: 0;
-        background: none;
+        background-color: transparent;
+        background-position: right 0 center;
         color: var(--ortus-text);
         font: inherit;
         font-size: 15px;
         font-weight: 600;
         text-overflow: ellipsis;
         cursor: pointer;
+      }
+      select:dir(rtl) {
+        background-position: left 0 center;
       }
       select option {
         background: var(--ortus-surface-2);

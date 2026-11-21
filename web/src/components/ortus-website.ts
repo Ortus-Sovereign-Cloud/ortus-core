@@ -108,12 +108,18 @@ export class OrtusWebsite extends LitElement {
       }
       select {
         block-size: 32px;
+        padding-inline: 10px 30px;
         border-radius: 8px;
         border: 1px solid var(--ortus-line-strong);
-        background: var(--ortus-surface);
+        background: var(--ortus-surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b93a3' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center / 12px 12px;
+        appearance: none;
+        -webkit-appearance: none;
         color: var(--ortus-text);
         font: inherit;
         font-size: 14px;
+      }
+      select:dir(rtl) {
+        background-position: left 10px center;
       }
       .button {
         display: inline-flex;

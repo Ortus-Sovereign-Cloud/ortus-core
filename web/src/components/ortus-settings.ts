@@ -107,10 +107,10 @@ export class OrtusSettings extends LitElement {
       }
       select {
         block-size: 36px;
-        padding-inline: 10px;
+        padding-inline: 10px 34px;
         border-radius: 9px;
         border: 1px solid var(--ortus-line-input);
-        background: var(--ortus-surface-2);
+        background-color: var(--ortus-surface-2);
         color: var(--ortus-text);
         font: inherit;
         font-size: 14px;

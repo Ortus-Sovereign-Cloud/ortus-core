@@ -49,3 +49,17 @@ test("a person adds a photo, sees it everywhere, and removes it", async ({ page,
   await expect(iryna.getByText(en["photo.removed"])).toBeVisible();
   await expect(profile.locator("ortus-avatar img")).toHaveCount(0);
 });
+
+test("dropdowns show one chevron with room, mirrored right to left", async ({ page }) => {
+  await page.goto("/settings");
+  const select = page.locator("ortus-settings select#size");
+  const style = await select.evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { appearance: s.appearance, image: s.backgroundImage.startsWith("url("), end: s.paddingInlineEnd };
+  });
+  expect(style).toEqual({ appearance: "none", image: true, end: "34px" });
+  // The three dropdowns, for a look.
+  const first = (await page.locator("ortus-settings select#lang").boundingBox())!;
+  const last = (await page.locator("ortus-settings select#motion").boundingBox())!;
+  await page.screenshot({ path: "test-results/screens/settings-dropdowns.png", clip: { x: first.x - 260, y: first.y - 16, width: first.width + 280, height: last.y + last.height - first.y + 32 } });
+});
