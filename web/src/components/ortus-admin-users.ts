@@ -6,6 +6,8 @@ import { ApiError, call, type Me } from "../api.js";
 import { t } from "../i18n.js";
 import type { MessageKey } from "../locales/en.js";
 import { controls } from "../ui.js";
+import "./ortus-avatar.js";
+import { photoChanged } from "./ortus-avatar.js";
 
 interface Person {
   id: string;
@@ -54,14 +56,6 @@ interface Device {
 
 const GB = 1024 * 1024 * 1024;
 
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]!.toUpperCase())
-    .join("");
-}
 
 /** Admin › Users & groups: everyone, how they sign in, invitations, quotas. */
 @customElement("ortus-admin-users")
@@ -257,6 +251,13 @@ export class OrtusAdminUsers extends LitElement {
         color: var(--ortus-teal);
         font-size: 14px;
       }
+      .toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--ortus-text-2);
+        font-size: 14px;
+      }
       .hint {
         margin-block: 6px 0;
         color: var(--ortus-text-3);
@@ -320,6 +321,8 @@ export class OrtusAdminUsers extends LitElement {
   @state() private inviteEmail = "";
   /** The links of the last CSV import, for a list to hand out. */
   @state() private imported: Invited[] = [];
+  /** Whether people may upload their own photo. */
+  @state() private photos: { uploads_allowed: boolean } | undefined;
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -353,6 +356,7 @@ export class OrtusAdminUsers extends LitElement {
     this.listing = listing;
     this.directory = directory;
     this.ourDomains = (domains?.domains ?? []).map((d) => d.domain.toLowerCase());
+    if (!this.photos) this.photos = await call<{ uploads_allowed: boolean }>("GET", "/me/photo").catch(() => undefined);
     if (this.selected) this.selected = listing.users.find((u) => u.id === this.selected!.id) ?? this.selected;
   }
 
@@ -532,7 +536,7 @@ export class OrtusAdminUsers extends LitElement {
     return html`
       <aside aria-label=${person.name}>
         <div class="person">
-          <span class="avatar" aria-hidden="true">${initials(person.name)}</span>
+          <ortus-avatar size="44" radius="12" .name=${person.name} .user=${person.id}></ortus-avatar>
           <div><h2>${person.name}</h2><small class="muted">${person.email}</small></div>
         </div>
         <h3>${t(this.localize, "people.role")}</h3>
@@ -575,6 +579,9 @@ export class OrtusAdminUsers extends LitElement {
                 : nothing}
             `
           : html`<button class="button" @click=${() => this.reset(person)}>${t(this.localize, "people.reset")}</button>`}
+        <button class="button" @click=${() => this.act(async () => { await call("DELETE", `/admin/users/${person.id}/photo`); photoChanged(); }, "people.photoRemoved")}>
+          ${t(this.localize, "people.removePhoto")}
+        </button>
         ${person.state === "suspended"
           ? html`<button class="button" @click=${() => this.change(person, { state: "active" }, "people.reactivated")}>${t(this.localize, "people.reactivate")}</button>`
           : html`<button class="button danger" ?disabled=${person.id === this.me?.id} @click=${() => this.change(person, { state: "suspended" }, "people.suspended")}>${t(this.localize, "people.suspend")}</button>`}
@@ -627,6 +634,23 @@ export class OrtusAdminUsers extends LitElement {
           <button class="button chip" aria-pressed=${this.filter === "near_quota" ? "true" : "false"} @click=${() => { this.filter = this.filter === "near_quota" ? "" : "near_quota"; void this.load(); }}>
             ${t(this.localize, "people.nearQuota", { count: l.near_quota })}
           </button>
+          ${this.photos
+            ? html`<label class="toggle">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  .checked=${this.photos.uploads_allowed}
+                  @change=${(e: Event) => {
+                    const allowed = (e.target as HTMLInputElement).checked;
+                    void this.act(async () => {
+                      await call("PUT", "/admin/photos", { allowed });
+                      this.photos = { uploads_allowed: allowed };
+                    }, "people.saved");
+                  }}
+                />
+                ${t(this.localize, "people.photosAllowed")}
+              </label>`
+            : nothing}
         </div>
         <table>
           <thead>
@@ -643,7 +667,7 @@ export class OrtusAdminUsers extends LitElement {
               (p) => html`<tr aria-selected=${this.selected?.id === p.id ? "true" : "false"} tabindex="0" @click=${() => this.select(p)} @keydown=${(e: KeyboardEvent) => e.key === "Enter" && this.select(p)}>
                 <td>
                   <div class="person">
-                    <span class="avatar" aria-hidden="true">${initials(p.name)}</span>
+                    <ortus-avatar size="32" radius="9" .name=${p.name} .user=${p.id}></ortus-avatar>
                     <div>${p.name}${p.id === this.me?.id ? html` (${t(this.localize, "people.you")})` : nothing}<small>${p.email}</small></div>
                   </div>
                 </td>

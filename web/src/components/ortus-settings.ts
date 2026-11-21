@@ -2,6 +2,8 @@ import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { LocalizeController } from "@lit-material/core/localize.js";
 import { call, signOut, type Me } from "../api.js";
+import { squarePhoto, uploadPhoto, photoChanged } from "./ortus-avatar.js";
+import "./ortus-avatar.js";
 import { LOCALES, pickLocale, setLocale, t } from "../i18n.js";
 import type { MessageKey } from "../locales/en.js";
 import { TEXT_SIZES, loadPreferences, savePreferences, type Preferences } from "../preferences.js";
@@ -168,6 +170,26 @@ export class OrtusSettings extends LitElement {
       form.inline {
         margin-block-start: 12px;
       }
+      .photo {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-block: 4px 18px;
+      }
+      .photo > div {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+      }
+      .photo .hint {
+        margin: 0;
+        color: var(--ortus-text-3);
+        font-size: 13px;
+      }
+      .photo .error {
+        margin: 0;
+      }
       .email {
         margin: 8px 0 16px;
         color: var(--ortus-text-2);
@@ -202,6 +224,8 @@ export class OrtusSettings extends LitElement {
   @state() private preferences: Preferences | undefined;
   @state() private devices: Device[] = [];
   @state() private saved: MessageKey | undefined;
+  @state() private photo: { source: "own" | "directory" | null; uploads_allowed: boolean } | undefined;
+  @state() private photoError: MessageKey | undefined;
   @state() private appPasswords: AppPassword[] = [];
   /** The password just made, shown this once. */
   @state() private fresh: { name: string; password: string } | undefined;
@@ -215,6 +239,29 @@ export class OrtusSettings extends LitElement {
     this.preferences = await loadPreferences();
     this.devices = (await call<{ sessions: Device[] }>("GET", "/me/sessions")).sessions;
     this.appPasswords = (await call<{ app_passwords: AppPassword[] }>("GET", "/me/app-passwords")).app_passwords;
+    this.photo = await call("GET", "/me/photo");
+  }
+
+  private async choosePhoto(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file) return;
+    this.photoError = undefined;
+    try {
+      await uploadPhoto(await squarePhoto(file));
+      this.photo = { source: "own", uploads_allowed: true };
+      this.saved = "photo.saved";
+    } catch (error) {
+      this.photoError = (error as Error).message === "photos_off" ? "photo.off" : "photo.failed";
+    }
+  }
+
+  private async removePhoto(): Promise<void> {
+    await call("DELETE", "/me/photo");
+    photoChanged();
+    if (this.photo) this.photo = { ...this.photo, source: null };
+    this.saved = "photo.removed";
   }
 
   private async makeAppPassword(event: SubmitEvent): Promise<void> {
@@ -341,6 +388,21 @@ export class OrtusSettings extends LitElement {
         </section>
         <section class="card" aria-labelledby="profile">
           <h2 id="profile">${t(this.localize, "settings.profile")}</h2>
+          <div class="photo">
+            <ortus-avatar size="72" radius="20" .name=${this.me?.name ?? ""} .user=${this.me?.id ?? ""}></ortus-avatar>
+            <div>
+              ${this.photo?.uploads_allowed
+                ? html`<label class="button" for="photo-file">${t(this.localize, this.photo.source ? "photo.change" : "photo.add")}</label>
+                    <input id="photo-file" type="file" accept="image/png,image/jpeg,image/webp" hidden @change=${this.choosePhoto} />`
+                : html`<p class="hint">${t(this.localize, "photo.off")}</p>`}
+              ${this.photo?.source === "own"
+                ? html`<button class="link" @click=${this.removePhoto}>${t(this.localize, "photo.remove")}</button>`
+                : this.photo?.source === "directory"
+                  ? html`<p class="hint">${t(this.localize, "photo.fromDirectory")}</p>`
+                  : ""}
+              ${this.photoError ? html`<p class="error" role="alert">${t(this.localize, this.photoError)}</p>` : ""}
+            </div>
+          </div>
           <form @submit=${this.rename}>
             <label for="name">${t(this.localize, "people.name")}</label>
             <input id="name" name="name" class="field" required maxlength="200" autocomplete="name" .value=${this.me?.name ?? ""} />

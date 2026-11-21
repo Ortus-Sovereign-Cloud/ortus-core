@@ -246,6 +246,9 @@ async fn sync(request: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiE
         vec![
             settings.mail_attribute.as_str(),
             settings.name_attribute.as_str(),
+            // Photos the directory keeps (binary, in bin_attrs).
+            "jpegPhoto",
+            "thumbnailPhoto",
         ],
     )
     .await
@@ -297,6 +300,15 @@ async fn sync(request: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiE
                 .await?
             }
         };
+        // The directory's photo, unless the person chose their own.
+        let photo = ["jpegPhoto", "thumbnailPhoto"]
+            .iter()
+            .find_map(|a| entry.bin_attrs.get(*a).and_then(|v| v.first()));
+        if let Some(photo) = photo {
+            if super::photos::source(store, &user.id).await?.as_deref() != Some("own") {
+                let _ = super::photos::keep(ortus, &user.id, photo, "directory").await;
+            }
+        }
         by_dn.insert(entry.dn.to_lowercase(), user.id);
     }
     let mut group_names = Vec::new();

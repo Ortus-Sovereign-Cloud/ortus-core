@@ -47,7 +47,7 @@ async function chooseLanguage(page: Page, code: Code): Promise<void> {
 
 test("a fresh installation says no apps are installed, with nothing blocked", async ({ page }) => {
   const errors = watchForErrors(page);
-  await page.goto("/");
+  await page.goto("/apps");
   await expect(page.getByRole("heading", { level: 1, name: en["switcher.title"] })).toBeVisible();
   await expect(page.getByText(en["switcher.empty"])).toBeVisible();
   await expect(page.getByText(en["switcher.emptyHint"])).toBeVisible();
@@ -58,10 +58,12 @@ test("a fresh installation says no apps are installed, with nothing blocked", as
 test("the rail and the switcher show the installed apps", async ({ page }) => {
   const errors = watchForErrors(page);
   await withApps(page);
-  await page.goto("/");
+  await page.goto("/apps");
   const nav = page.getByRole("navigation", { name: en["shell.apps"] });
-  // Home, six apps, Admin (the owner is an administrator), All apps and My settings.
-  await expect(nav.getByRole("link")).toHaveCount(10);
+  // Home, six apps, Admin (the owner is an administrator) and All apps; the
+  // account menu's button.
+  await expect(nav.getByRole("link")).toHaveCount(9);
+  await expect(nav.getByRole("button", { name: en["account.menu"] })).toBeVisible();
   await expect(nav.locator(".label")).toHaveText(["Mail", "Chat", "Calls", "Calendar", "Tasks", "People", "Admin", "All apps"]);
   await expect(nav.getByRole("link", { name: en["shell.home"] })).toHaveAttribute("href", "/");
   await expect(nav.getByRole("link", { name: "All apps", exact: true })).toHaveAttribute("aria-current", "page");
@@ -88,7 +90,7 @@ for (const locale of LOCALES) {
   test(`the whole screen is in ${locale.name} (${code}), ${locale.dir}`, async ({ page }) => {
     const errors = watchForErrors(page);
     await withApps(page);
-    await page.goto("/");
+    await page.goto("/apps");
     await chooseLanguage(page, code);
     await expect(page.locator("html")).toHaveAttribute("dir", locale.dir);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(catalog["switcher.title"] as string);
@@ -125,7 +127,7 @@ for (const locale of LOCALES) {
 
 test("a right-to-left language mirrors the layout", async ({ page }) => {
   await withApps(page);
-  await page.goto("/");
+  await page.goto("/apps");
   const width = page.viewportSize()!.width;
   const box = async (selector: string) => (await page.locator(selector).boundingBox())!;
 
@@ -174,7 +176,7 @@ test.describe("first visit", () => {
     test.describe(`with a browser set to ${browser}`, () => {
       test.use({ locale: browser });
       test(`starts in ${expected}`, async ({ page }) => {
-        await page.goto("/");
+        await page.goto("/apps");
         await expect(page.locator("html")).toHaveAttribute("lang", expected);
         await expect(page.getByRole("heading", { level: 1 })).toHaveText(CATALOGS[expected]["switcher.title"] as string);
       });
@@ -185,7 +187,7 @@ test.describe("first visit", () => {
 test("a failed load says so and can be retried", async ({ page }) => {
   let fail = true;
   await page.route("**/api/v1/apps", (route) => (fail ? route.fulfill({ status: 500, json: { error: { code: "internal", message: "x", request_id: "r" } } }) : route.fulfill({ json: { apps: V1_APPS } })));
-  await page.goto("/");
+  await page.goto("/apps");
   await expect(page.getByRole("alert")).toHaveText(en["switcher.loadFailed"]);
   fail = false;
   await page.getByRole("button", { name: en["switcher.retry"] }).click();
@@ -195,7 +197,7 @@ test("a failed load says so and can be retried", async ({ page }) => {
 
 test("the keyboard reaches everything, starting with a skip link", async ({ page }) => {
   await withApps(page);
-  await page.goto("/");
+  await page.goto("/apps");
   await expect(page.locator("ortus-app-switcher a.app")).toHaveCount(11);
   await page.keyboard.press("Tab");
   const skip = page.getByRole("link", { name: en["shell.skip"] });
@@ -208,7 +210,7 @@ test("the keyboard reaches everything, starting with a skip link", async ({ page
 test("it fits a phone-width window without sideways scrolling", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await withApps(page);
-  await page.goto("/");
+  await page.goto("/apps");
   await expect(page.locator("ortus-app-switcher a.app")).toHaveCount(11);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await page.screenshot({ path: "test-results/screens/shell-en-phone.png" });
@@ -218,7 +220,7 @@ test.describe("an address that belongs to no installed app", () => {
   for (const locale of LOCALES) {
     test(`says the app is not installed, in ${locale.name} (${locale.code})`, async ({ page }) => {
       const errors = watchForErrors(page);
-      await page.goto("/");
+      await page.goto("/apps");
       await chooseLanguage(page, locale.code as Code);
       await page.goto("/drive/some/file");
       const catalog = CATALOGS[locale.code as Code];
@@ -226,7 +228,7 @@ test.describe("an address that belongs to no installed app", () => {
       await expect(page.getByText((catalog["notInstalled.body"] as string).replace("{path}", "/drive/some/file"))).toBeVisible();
       await expect(page.locator("html")).toHaveAttribute("dir", locale.dir);
       await page.getByRole("link", { name: catalog["notInstalled.back"] as string }).click();
-      await expect(page).toHaveURL(/\/$/);
+      await expect(page).toHaveURL(/\/apps$/);
       await expect(page.getByRole("heading", { level: 1, name: catalog["switcher.title"] as string })).toBeVisible();
       expect(errors).toEqual([]);
     });
@@ -271,4 +273,26 @@ test("an app without a client of its own says it is not installed", async ({ pag
   await withApps(page);
   await page.goto("/calls");
   await expect(page.getByRole("heading", { name: en["notInstalled.title"] })).toBeVisible();
+});
+
+test("the start page greets the person, with a card from each app that has one", async ({ page }) => {
+  const errors = watchForErrors(page);
+  // Mail has a card: its today.js defines ortus-mail-today.
+  await page.route("**/api/v1/apps", (route) => route.fulfill({ json: { apps: V1_APPS.map((app) => ({ ...app, today: app.id === "mail" })) } }));
+  await page.route("**/assets/apps/mail/today.js", (route) =>
+    route.fulfill({
+      contentType: "text/javascript",
+      body: 'customElements.define("ortus-mail-today", class extends HTMLElement { connectedCallback() { this.innerHTML = "<section aria-label=\\"Mail card\\">3 unread</section>"; } });',
+    }),
+  );
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(/^Good (morning|afternoon|evening), Taras$/);
+  await expect(page.getByRole("region", { name: "Mail card" })).toHaveText("3 unread");
+  await expect(page.getByRole("link", { name: en["today.allApps"] })).toHaveAttribute("href", "/apps");
+  // The mark leads here; All apps leads to the switcher.
+  const nav = page.getByRole("navigation", { name: en["shell.apps"] });
+  await nav.getByRole("link", { name: en["shell.allApps"], exact: true }).click();
+  await expect(page).toHaveURL(/\/apps$/);
+  await expect(page.getByRole("heading", { level: 1, name: en["switcher.title"] })).toBeVisible();
+  expect(errors).toEqual([]);
 });

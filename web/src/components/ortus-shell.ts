@@ -2,7 +2,7 @@ import { LitElement, css, html, nothing, svg } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { LocalizeController } from "@lit-material/core/localize.js";
-import { installedApps, setPlace, type InstalledApp, type Me } from "../api.js";
+import { installedApps, setPlace, signOut, type InstalledApp, type Me } from "../api.js";
 import { LOCALES, setLocale, appName, t } from "../i18n.js";
 import { APP_ICONS, tileTints } from "../icons.js";
 import type { MessageKey } from "../locales/en.js";
@@ -13,6 +13,8 @@ import "./ortus-settings.js";
 import "./ortus-welcome.js";
 import "./ortus-security.js";
 import "./ortus-notifications.js";
+import "./ortus-avatar.js";
+import "./ortus-today.js";
 
 /** How many apps the rail shows before "All apps". */
 const RAIL_APPS = 6;
@@ -21,14 +23,6 @@ const RAIL_APPS = 6;
  * The frame every Ortus screen sits in: the app rail along the inline
  * start edge and the current screen beside it.
  */
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]!.toUpperCase())
-    .join("");
-}
 
 @customElement("ortus-shell")
 export class OrtusShell extends LitElement {
@@ -174,6 +168,61 @@ export class OrtusShell extends LitElement {
       color: var(--ortus-text);
       box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
     }
+    #account {
+      min-inline-size: 260px;
+      inset-block-end: 60px;
+    }
+    .who {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px 14px;
+      border-block-end: 1px solid var(--ortus-line);
+      margin-block-end: 6px;
+    }
+    .who div {
+      display: flex;
+      flex-direction: column;
+      min-inline-size: 0;
+    }
+    .who strong {
+      font-size: 15px;
+    }
+    .who small {
+      color: var(--ortus-text-2);
+      font-size: 13px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .who .role {
+      color: var(--ortus-text-3);
+      font-size: 12px;
+    }
+    [role="menuitem"] {
+      display: flex;
+      align-items: center;
+      inline-size: 100%;
+      block-size: 40px;
+      padding-inline: 12px;
+      box-sizing: border-box;
+      border: 0;
+      border-radius: 10px;
+      background: none;
+      color: inherit;
+      font: inherit;
+      font-size: 14px;
+      text-align: start;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    [role="menuitem"]:hover,
+    [role="menuitem"]:focus-visible {
+      background: var(--ortus-hover);
+    }
+    [role="menuitem"].out {
+      color: var(--ortus-red);
+    }
     [role="menuitemradio"] {
       display: flex;
       align-items: center;
@@ -263,10 +312,19 @@ export class OrtusShell extends LitElement {
     }
   }
 
+  private readonly closeMenus = (): void => {
+    for (const open of this.renderRoot.querySelectorAll<HTMLElement>("[popover]")) open.hidePopover();
+  };
+
+  private readonly signOutHere = async (): Promise<void> => {
+    await signOut();
+    location.assign("/sign-in");
+  };
+
   private async choose(code: string): Promise<void> {
     // This device only; My settings sets the account's language.
     await setLocale(code);
-    this.renderRoot.querySelector<HTMLElement>("[popover]")?.hidePopover();
+    this.renderRoot.querySelector<HTMLElement>("#languages")?.hidePopover();
   }
 
   override render() {
@@ -285,7 +343,7 @@ export class OrtusShell extends LitElement {
         </a>
         ${(this.apps ?? []).slice(0, RAIL_APPS).map((app) => this.railItem(app))}
         ${this.me && this.me.role !== "member" ? this.railItem({ id: "admin", group: "organisation", path: "/admin" }) : nothing}
-        <a class="item" href="/" aria-current=${location.pathname === "/" || location.pathname === "/apps" ? "page" : nothing} aria-label=${t(this.localize, "shell.allApps")}>
+        <a class="item" href="/apps" aria-current=${location.pathname === "/apps" ? "page" : nothing} aria-label=${t(this.localize, "shell.allApps")}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <rect x="4" y="4" width="6" height="6" rx="1" />
             <rect x="14" y="4" width="6" height="6" rx="1" />
@@ -297,9 +355,28 @@ export class OrtusShell extends LitElement {
         <span class="spacer"></span>
         ${this.me ? html`<ortus-notifications></ortus-notifications>` : nothing}
         ${this.me
-          ? html`<a class="item" href="/settings" aria-label=${t(this.localize, "settings.title")} aria-current=${location.pathname.startsWith("/settings") ? "page" : nothing}>
-              <span class="avatar" aria-hidden="true">${initials(this.me.name)}</span>
-            </a>`
+          ? html`<button
+                class="item"
+                popovertarget="account"
+                aria-haspopup="menu"
+                aria-label=${t(this.localize, "account.menu")}
+                aria-current=${location.pathname.startsWith("/settings") ? "page" : nothing}
+              >
+                <ortus-avatar .name=${this.me.name} .user=${this.me.id}></ortus-avatar>
+              </button>
+              <div id="account" popover role="menu" aria-label=${t(this.localize, "account.menu")}>
+                <div class="who">
+                  <ortus-avatar size="48" radius="14" .name=${this.me.name} .user=${this.me.id}></ortus-avatar>
+                  <div>
+                    <strong>${this.me.name}</strong>
+                    <small>${this.me.email}</small>
+                    <small class="role">${t(this.localize, `people.${this.me.role}` as MessageKey)}</small>
+                  </div>
+                </div>
+                <a role="menuitem" href="/settings" @click=${this.closeMenus}>${t(this.localize, "account.settings")}</a>
+                <a role="menuitem" href="/settings/security" @click=${this.closeMenus}>${t(this.localize, "account.security")}</a>
+                <button role="menuitem" class="out" @click=${this.signOutHere}>${t(this.localize, "account.signOut")}</button>
+              </div>`
           : nothing}
         <div class="language">
           <button class="item" popovertarget="languages" aria-haspopup="menu" aria-expanded=${this.languageOpen ? "true" : "false"} aria-label=${t(this.localize, "language.label")}>
@@ -344,6 +421,9 @@ export class OrtusShell extends LitElement {
     if (path === "/admin" || path.startsWith("/admin/")) {
       return html`<ortus-admin .me=${this.me}></ortus-admin>`;
     }
+    if (path === "/" && this.apps !== undefined) {
+      return html`<ortus-today .me=${this.me} .apps=${this.apps}></ortus-today>`;
+    }
     if (path === "/" || path === "/apps" || this.apps === undefined) {
       return html`<ortus-app-switcher .apps=${this.apps} .failed=${this.failed} @retry=${() => this.load()}></ortus-app-switcher>`;
     }
@@ -370,7 +450,7 @@ export class OrtusShell extends LitElement {
       <section class="missing" role="status">
         <h1>${t(this.localize, "notInstalled.title")}</h1>
         <p>${t(this.localize, "notInstalled.body", { path })}</p>
-        <a href="/">${t(this.localize, "notInstalled.back")}</a>
+        <a href="/apps">${t(this.localize, "notInstalled.back")}</a>
       </section>
     `;
   }

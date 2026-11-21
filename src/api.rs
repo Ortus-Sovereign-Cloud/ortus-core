@@ -248,7 +248,15 @@ fn apps(
             .apps_on()
             .await
             .iter()
-            .map(|app| json!({"id": app.id, "group": app.group.name(), "path": app.path}))
+            .map(|app| {
+                // A card on the start page: the app serves today.js.
+                let today = ortus
+                    .apps
+                    .iter()
+                    .find(|a| a.info().id == app.id)
+                    .is_some_and(|a| a.web_file("today.js").is_some());
+                json!({"id": app.id, "group": app.group.name(), "path": app.path, "today": today})
+            })
             .collect();
         ok(&json!({ "apps": apps }))
     })
@@ -293,7 +301,8 @@ fn apps_schema() -> Value {
                 "properties": {
                     "id": {"type": "string", "description": "Stable id of the app, such as mail or calendar."},
                     "group": {"type": "string", "enum": ["communicate", "organise", "create", "organisation"]},
-                    "path": {"type": "string", "description": "Where the app lives in the web client."}
+                    "path": {"type": "string", "description": "Where the app lives in the web client."},
+                    "today": {"type": "boolean", "description": "Whether the app has a card on the start page (its /assets/apps/<id>/today.js)."}
                 }
             }
         }}
@@ -638,6 +647,7 @@ pub fn routes() -> Vec<Route> {
     all.extend(crate::auth::policy::routes());
     all.extend(crate::first_run::routes());
     all.extend(crate::auth::personal::routes());
+    all.extend(crate::auth::photos::routes());
     all.extend(crate::auth::app_passwords::routes());
     all.extend(crate::policy::routes());
     all.extend(crate::retention::routes());

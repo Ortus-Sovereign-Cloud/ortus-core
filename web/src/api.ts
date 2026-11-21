@@ -7,6 +7,8 @@ export interface InstalledApp {
   group: "communicate" | "organise" | "create" | "organisation";
   /** Where the app lives in the web client. */
   path: string;
+  /** Whether it has a card on the start page (today.js). */
+  today?: boolean;
 }
 
 export interface ApiErrorBody {
