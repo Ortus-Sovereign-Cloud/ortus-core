@@ -1,5 +1,6 @@
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { live } from "lit/directives/live.js";
 import { LocalizeController } from "@lit-material/core/localize.js";
 import { ApiError, call, signInProviders, type Me, type Provider } from "../api.js";
 import { t } from "../i18n.js";
@@ -307,7 +308,7 @@ export class OrtusAdminSignIn extends LitElement {
               class="switch"
               type="checkbox"
               role="switch"
-              .checked=${o.policy.password}
+              .checked=${live(o.policy.password)}
               ?disabled=${!owner}
               aria-label=${t(this.localize, "policy.passwordMethod")}
               @change=${(e: Event) => this.save({ password: (e.target as HTMLInputElement).checked })}
