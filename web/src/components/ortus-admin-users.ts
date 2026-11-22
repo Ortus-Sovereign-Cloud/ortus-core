@@ -310,6 +310,8 @@ export class OrtusAdminUsers extends LitElement {
   @state() private query = "";
   @state() private filter = "";
   @state() private selected: Person | undefined;
+  /** The address typed to confirm removing the selected person. */
+  @state() private removeTyped = "";
   @state() private devices: Device[] = [];
   @state() private directory: { connected: boolean; url?: string; base_dn?: string; last_sync_at?: number | null } | undefined;
   @state() private message: { key: MessageKey; error: boolean; args?: Record<string, string | number> } | undefined;
@@ -379,6 +381,8 @@ export class OrtusAdminUsers extends LitElement {
         key:
           code === "last_owner"
             ? "people.lastOwner"
+            : code === "on_hold"
+              ? "people.onHold"
             : code === "conflict"
               ? "people.exists"
               : code === "forbidden"
@@ -585,8 +589,41 @@ export class OrtusAdminUsers extends LitElement {
         ${person.state === "suspended"
           ? html`<button class="button" @click=${() => this.change(person, { state: "active" }, "people.reactivated")}>${t(this.localize, "people.reactivate")}</button>`
           : html`<button class="button danger" ?disabled=${person.id === this.me?.id} @click=${() => this.change(person, { state: "suspended" }, "people.suspended")}>${t(this.localize, "people.suspend")}</button>`}
+        ${this.me?.role === "owner" && person.id !== this.me?.id
+          ? html`<button
+              class="button danger"
+              @click=${() => {
+                this.removeTyped = "";
+                this.renderRoot.querySelector<HTMLDialogElement>("#remove")?.showModal();
+              }}
+            >
+              ${t(this.localize, "people.remove")}
+            </button>`
+          : nothing}
         <p class="muted">${t(this.localize, role)} · ${t(this.localize, `people.state.${person.state}` as MessageKey)}</p>
       </aside>
+      <dialog id="remove" aria-labelledby="remove-title">
+        <h2 id="remove-title">${t(this.localize, "people.removeTitle", { name: person.name })}</h2>
+        <p>${t(this.localize, "people.removeLead", { name: person.name })}</p>
+        <label for="remove-confirm">${t(this.localize, "people.removeType", { email: person.email })}</label>
+        <input id="remove-confirm" autocomplete="off" .value=${this.removeTyped} @input=${(e: Event) => (this.removeTyped = (e.target as HTMLInputElement).value)} />
+        <div class="row">
+          <button class="button" @click=${() => this.renderRoot.querySelector<HTMLDialogElement>("#remove")?.close()}>${t(this.localize, "people.cancel")}</button>
+          <button
+            class="button danger"
+            ?disabled=${this.removeTyped.trim().toLowerCase() !== person.email.toLowerCase()}
+            @click=${() => {
+              this.renderRoot.querySelector<HTMLDialogElement>("#remove")?.close();
+              void this.act(async () => {
+                await call("DELETE", `/admin/users/${person.id}`, { confirm: this.removeTyped.trim() });
+                this.selected = undefined;
+              }, "people.removed");
+            }}
+          >
+            ${t(this.localize, "people.removeConfirm")}
+          </button>
+        </div>
+      </dialog>
     `;
   }
 

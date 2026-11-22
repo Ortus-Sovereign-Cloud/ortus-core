@@ -40,6 +40,11 @@ pub const MAX_BYTES: usize = 512 * 1024;
 /// The installation-wide setting that turns uploads off.
 const UPLOADS: &str = "photo_uploads";
 
+/// Removes a person's photo file (their row goes with the account).
+pub async fn forget_file(ortus: &Instance, user_id: &str) {
+    let _ = ortus.files.delete(&key(user_id)).await;
+}
+
 fn key(user_id: &str) -> String {
     format!("core/photos/{user_id}")
 }

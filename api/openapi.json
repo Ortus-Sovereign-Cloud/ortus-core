@@ -1611,6 +1611,46 @@
       }
     },
     "/api/v1/admin/users/:id": {
+      "delete": {
+        "description": "For administrators and owners.",
+        "operationId": "removePerson",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Remove a person and everything of theirs (owners only): {confirm, their address typed again}. Not yourself, the last owner, or someone under a retention hold.",
+        "tags": [
+          "people"
+        ]
+      },
       "patch": {
         "description": "For administrators and owners.",
         "operationId": "changePerson",

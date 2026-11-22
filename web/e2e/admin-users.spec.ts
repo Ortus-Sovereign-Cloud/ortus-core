@@ -50,6 +50,16 @@ test("the owner invites someone, imports a list and suspends a person", async ({
   await page.getByRole("button", { name: en["people.suspend"], exact: true }).click();
   await expect(page.getByRole("status")).toHaveText(en["people.suspended"]);
   await expect(page.getByRole("row").filter({ hasText: "jonas@ministry.example" })).toContainText(en["people.state.suspended"]);
+
+  // The owner removes Jonas: the address typed again, then he is gone.
+  await page.getByRole("button", { name: en["people.remove"], exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: en["people.removeTitle"].replace("{name}", "Jonas Berg") });
+  const confirm = dialog.getByRole("button", { name: en["people.removeConfirm"] });
+  await expect(confirm).toBeDisabled();
+  await dialog.getByLabel(en["people.removeType"].replace("{email}", "jonas@ministry.example")).fill("jonas@ministry.example");
+  await confirm.click();
+  await expect(page.getByRole("status")).toHaveText(en["people.removed"]);
+  await expect(page.getByRole("row").filter({ hasText: "jonas@ministry.example" })).toHaveCount(0);
 });
 
 test("the rail has the admin console for administrators", async ({ page }) => {

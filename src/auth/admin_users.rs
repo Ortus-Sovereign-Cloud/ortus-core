@@ -763,6 +763,89 @@ async fn invited(
     Ok((me, user))
 }
 
+#[derive(Deserialize)]
+struct Removal {
+    /// The person's address, typed again: removing cannot be undone.
+    confirm: String,
+}
+
+/// Removes a person and everything of theirs (mail, files, calendars, …),
+/// as an expired account is: owners only, never oneself or the last owner,
+/// never someone a retention hold keeps.
+async fn remove(
+    request: &Request,
+    params: &PathParams,
+    ortus: &Arc<Instance>,
+) -> Result<Response, ApiError> {
+    let me = me_admin(request, ortus).await?;
+    if me.role != Role::Owner {
+        return Err(ApiError::forbidden());
+    }
+    let input: Removal = body(request)?;
+    let store = ortus.store.as_ref();
+    let id = params.get("id").unwrap_or_default().to_string();
+    let user = accounts::by_id(store, &id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("There is no such person."))?;
+    if user.id == me.id {
+        return Err(ApiError {
+            status: 409,
+            code: "yourself",
+            message: "You cannot remove yourself.".into(),
+        });
+    }
+    if !input.confirm.trim().eq_ignore_ascii_case(&user.email) {
+        return Err(ApiError::bad_request(
+            "Type the person's address to confirm.",
+        ));
+    }
+    if user.role == Role::Owner && owners(store).await? <= 1 {
+        return Err(ApiError {
+            status: 409,
+            code: "last_owner",
+            message: "An installation keeps at least one owner.".into(),
+        });
+    }
+    let held = !store
+        .query(
+            &format!("{} AND t.target = $1", crate::retention::PERSON_HELD_SQL),
+            &[user.id.as_str().into()],
+        )
+        .await?
+        .is_empty();
+    if held {
+        return Err(ApiError {
+            status: 409,
+            code: "on_hold",
+            message: "A retention hold keeps this person's data: release it first.".into(),
+        });
+    }
+    let now = now_ms();
+    let mut tx = store.begin().await?;
+    let rules = crate::retention::read_rules(tx.as_mut(), now).await?;
+    super::signup::erase_in(tx.as_mut(), ortus, &user.id, &rules)
+        .await
+        .map_err(|e| {
+            eprintln!("ortus: removing {}: {e}", user.id);
+            ApiError::internal()
+        })?;
+    crate::audit::record_in(
+        tx.as_mut(),
+        &crate::audit::Event::new("people.removed", crate::audit::Outcome::Done)
+            .by(&me.id)
+            .on(&user.id)
+            .with(json!({ "email": user.email, "name": user.name })),
+        now,
+    )
+    .await
+    .map_err(|e| {
+        eprintln!("ortus: removing {}: {e}", user.id);
+        ApiError::internal()
+    })?;
+    tx.commit().await?;
+    Ok(ok(&json!({ "removed": user.id })))
+}
+
 /// A new link for someone invited (the old one stops working): sent again
 /// ({send_to} to a personal address, else to where the last letter went),
 /// or only shown ({send: false}).
@@ -965,6 +1048,7 @@ h!(h_reset, reset, params);
 h!(h_new_link, new_link, params);
 h!(h_withdraw, withdraw, params);
 h!(h_devices, devices, params);
+h!(h_remove, remove, params);
 h!(h_accept, accept, connection);
 h!(h_groups, groups);
 
@@ -991,6 +1075,7 @@ pub fn routes() -> Vec<Route> {
         r(Method::Post, "/admin/users/:id/reset", "resetSignIn", "Sign a person out everywhere, remove their sign-in methods and make a new invitation: {send, send_to}, both optional.", Access::Admin, h_reset),
         r(Method::Post, "/admin/users/:id/invitation", "renewInvitation", "A new link for someone invited (the old one stops working): {send (default true), send_to}.", Access::Admin, h_new_link),
         r(Method::Delete, "/admin/users/:id/invitation", "withdrawInvitation", "Withdraw someone's invitation: its link stops working.", Access::Admin, h_withdraw),
+        r(Method::Delete, "/admin/users/:id", "removePerson", "Remove a person and everything of theirs (owners only): {confirm, their address typed again}. Not yourself, the last owner, or someone under a retention hold.", Access::Admin, h_remove),
         r(Method::Get, "/admin/users/:id/devices", "listPersonDevices", "Where a person is signed in.", Access::Admin, h_devices),
         r(Method::Get, "/admin/groups", "listGroups", "The groups and how many people are in each.", Access::Admin, h_groups),
         r(Method::Post, "/invitation/accept", "acceptInvitation", "Follow an invitation link: {token}. Signs in; next, add a sign-in method.", Access::Public, h_accept),

@@ -30,7 +30,7 @@ test("the account menu names the person and leads to their settings", async ({ p
 });
 
 test("a person adds a photo, sees it everywhere, and removes it", async ({ page, browser }) => {
-  const { page: iryna } = await newcomer(page, browser);
+  const { page: iryna, email } = await newcomer(page, browser);
   await iryna.goto("/settings");
   const profile = iryna.getByRole("region", { name: en["settings.profile"] });
   await expect(profile.locator("ortus-avatar img")).toHaveCount(0);
@@ -43,7 +43,7 @@ test("a person adds a photo, sees it everywhere, and removes it", async ({ page,
   await expect(iryna.locator("ortus-shell").getByRole("button", { name: en["account.menu"] }).locator("ortus-avatar img")).toBeVisible();
   // The owner sees it in the people list.
   await page.goto("/admin/users");
-  await expect(page.getByRole("row").filter({ hasText: "Iryna Savchenko" }).last().locator("ortus-avatar img")).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: email }).locator("ortus-avatar img")).toBeVisible();
 
   await profile.getByRole("button", { name: en["photo.remove"] }).click();
   await expect(iryna.getByText(en["photo.removed"])).toBeVisible();

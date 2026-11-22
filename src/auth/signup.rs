@@ -380,33 +380,7 @@ async fn expire(tx: &mut dyn AsyncTx, ortus: &Instance, now: i64) -> Result<(), 
         .map_err(|e| e.to_string())?;
     for row in rows {
         let id = row.text(0).unwrap_or_default().to_string();
-        for app in &ortus.apps {
-            app.forget_user(tx, &id, &rules).await?;
-        }
-        crate::search::forget_in(tx, ortus.store.engine(), &id)
-            .await
-            .map_err(|e| e.to_string())?;
-        for sql in [
-            "DELETE FROM core_sessions WHERE user_id = $1",
-            "DELETE FROM core_credentials WHERE user_id = $1",
-            "DELETE FROM core_signin_tickets WHERE user_id = $1",
-            "DELETE FROM core_webauthn_challenges WHERE user_id = $1",
-            "DELETE FROM core_email_checks WHERE user_id = $1",
-            "DELETE FROM core_group_members WHERE user_id = $1",
-            "DELETE FROM core_invites WHERE user_id = $1",
-            "DELETE FROM core_external_links WHERE user_id = $1",
-            "DELETE FROM core_preferences WHERE user_id = $1",
-            "DELETE FROM core_notifications WHERE user_id = $1",
-            "DELETE FROM core_notify_settings WHERE user_id = $1",
-            "DELETE FROM core_oidc_codes WHERE user_id = $1",
-            "DELETE FROM core_oidc_tokens WHERE user_id = $1",
-            "DELETE FROM core_signups WHERE user_id = $1",
-            "DELETE FROM core_users WHERE id = $1",
-        ] {
-            tx.execute(sql, &[id.as_str().into()])
-                .await
-                .map_err(|e| e.to_string())?;
-        }
+        erase_in(tx, ortus, &id, &rules).await?;
         crate::audit::record_in(
             tx,
             &crate::audit::Event::new("auth.account_deleted", crate::audit::Outcome::Done)
@@ -477,4 +451,45 @@ pub fn routes() -> Vec<Route> {
         route(Method::Post, "/signup", "signUp", "Start an account with {email, name, language, accept_terms}; a code goes to the address. Answers {ticket}.", Access::Public, h_sign_up),
         route(Method::Post, "/signup/verify", "verifySignUp", "Finish signing up with {ticket, code}; signs in and answers next: add_sign_in_method.", Access::Public, h_verify),
     ]
+}
+
+/// Erases a person and everything of theirs, every app's part too, inside
+/// the caller's transaction (the caller checks holds and records why).
+pub(crate) async fn erase_in(
+    tx: &mut dyn crate::storage::AsyncTx,
+    ortus: &Instance,
+    id: &str,
+    rules: &crate::retention::Rules,
+) -> Result<(), String> {
+    for app in &ortus.apps {
+        app.forget_user(tx, id, rules).await?;
+    }
+    crate::search::forget_in(tx, ortus.store.engine(), id)
+        .await
+        .map_err(|e| e.to_string())?;
+    for sql in [
+        "DELETE FROM core_sessions WHERE user_id = $1",
+        "DELETE FROM core_credentials WHERE user_id = $1",
+        "DELETE FROM core_signin_tickets WHERE user_id = $1",
+        "DELETE FROM core_webauthn_challenges WHERE user_id = $1",
+        "DELETE FROM core_email_checks WHERE user_id = $1",
+        "DELETE FROM core_group_members WHERE user_id = $1",
+        "DELETE FROM core_invites WHERE user_id = $1",
+        "DELETE FROM core_external_links WHERE user_id = $1",
+        "DELETE FROM core_preferences WHERE user_id = $1",
+        "DELETE FROM core_notifications WHERE user_id = $1",
+        "DELETE FROM core_notify_settings WHERE user_id = $1",
+        "DELETE FROM core_oidc_codes WHERE user_id = $1",
+        "DELETE FROM core_oidc_tokens WHERE user_id = $1",
+        "DELETE FROM core_signups WHERE user_id = $1",
+        "DELETE FROM core_photos WHERE user_id = $1",
+        "DELETE FROM core_phone_links WHERE user_id = $1",
+        "DELETE FROM core_users WHERE id = $1",
+    ] {
+        tx.execute(sql, &[id.into()])
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    super::photos::forget_file(ortus, id).await;
+    Ok(())
 }
