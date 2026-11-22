@@ -9,6 +9,7 @@ import "./ortus-shell.js";
 import "./ortus-sign-in.js";
 import "./ortus-sign-up.js";
 import "./ortus-terms.js";
+import "./ortus-notice.js";
 import "./ortus-website.js";
 
 type View =
@@ -17,6 +18,7 @@ type View =
   | { kind: "sign-in" }
   | { kind: "sign-up" }
   | { kind: "terms" }
+  | { kind: "notice"; page: "privacy" | "support" }
   | { kind: "website"; signupOpen: boolean }
   | { kind: "app"; me: Me }
   | { kind: "accept" }
@@ -53,6 +55,10 @@ export class OrtusRoot extends LitElement {
       return;
     }
     // Pages anyone may read, signed in or not.
+    if (location.pathname === "/privacy" || location.pathname === "/support") {
+      this.view = { kind: "notice", page: location.pathname === "/privacy" ? "privacy" : "support" };
+      return;
+    }
     if (location.pathname === "/terms") {
       this.view = { kind: "terms" };
       return;
@@ -119,6 +125,8 @@ export class OrtusRoot extends LitElement {
         return html`<ortus-sign-up></ortus-sign-up>`;
       case "terms":
         return html`<ortus-terms></ortus-terms>`;
+      case "notice":
+        return html`<ortus-notice kind=${this.view.page}></ortus-notice>`;
       case "accept":
         return html`<ortus-accept></ortus-accept>`;
       case "relay":

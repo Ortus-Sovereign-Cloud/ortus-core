@@ -34,6 +34,9 @@ pub const SCREENS: &[&str] = &[
     "/sign-in",
     "/sign-up",
     "/terms",
+    // What the app stores link to: the apps' privacy policy and support.
+    "/privacy",
+    "/support",
     "/welcome",
     // The shared app link of an invitation (app_links).
     "/i",
