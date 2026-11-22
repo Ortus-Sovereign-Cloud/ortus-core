@@ -18,6 +18,7 @@ const PAGES: Record<"privacy" | "support", { title: MessageKey; lead: MessageKey
       ["privacy.whereTitle", "privacy.where"],
       ["privacy.phoneTitle", "privacy.phone"],
       ["privacy.callsTitle", "privacy.calls"],
+      ["privacy.notifyTitle", "privacy.notify"],
       ["privacy.rightsTitle", "privacy.rights"],
       ["privacy.childrenTitle", "privacy.children"],
       ["privacy.changesTitle", "privacy.changes"],
