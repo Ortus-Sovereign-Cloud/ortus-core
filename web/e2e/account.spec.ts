@@ -63,3 +63,29 @@ test("dropdowns show one chevron with room, mirrored right to left", async ({ pa
   const last = (await page.locator("ortus-settings select#motion").boundingBox())!;
   await page.screenshot({ path: "test-results/screens/settings-dropdowns.png", clip: { x: first.x - 260, y: first.y - 16, width: first.width + 280, height: last.y + last.height - first.y + 32 } });
 });
+
+test("a person signs in on their phone from the web with a one-time code", async ({ page, browser }) => {
+  const { page: iryna, email } = await newcomer(page, browser);
+  await iryna.goto("/");
+  await iryna.getByRole("button", { name: en["account.menu"] }).click();
+  const made = iryna.waitForResponse((r) => r.url().endsWith("/api/v1/me/phone-link") && r.request().method() === "POST");
+  await iryna.getByRole("menu", { name: en["account.menu"] }).getByRole("menuitem", { name: en["account.phone"] }).click();
+  const dialog = iryna.getByRole("dialog", { name: en["phone.title"] });
+  await expect(dialog.getByRole("img", { name: en["phone.qr"] })).toBeVisible();
+  await expect(dialog).toContainText(en["phone.once"]);
+  const link = ((await (await made).json()) as { link: string }).link;
+  const code = link.split("p=")[1]!;
+
+  // On a computer, the link's page says to open it on the phone.
+  const relay = await (await browser.newContext({ storageState: { cookies: [], origins: [] } })).newPage();
+  await relay.goto(`/i#${link.split("#")[1]}`);
+  await expect(relay.getByText(en["relay.phoneOnComputer"])).toBeVisible();
+
+  // The app follows it: signed in as Iryna; the web says so.
+  const phone = await relay.request.post("/api/v1/session/phone-link", { headers: { "X-Requested-With": "ortus", "User-Agent": "Ortus/1 CFNetwork/3826 Darwin/25.0.0" }, data: { token: code } });
+  expect(phone.status()).toBe(200);
+  expect(((await phone.json()) as { email: string }).email).toBe(email);
+  await expect(dialog.getByRole("status")).toHaveText(en["phone.doneOn"].replace("{device}", "iPhone"));
+  // Once only.
+  expect((await relay.request.post("/api/v1/session/phone-link", { headers: { "X-Requested-With": "ortus" }, data: { token: code } })).status()).toBe(410);
+});

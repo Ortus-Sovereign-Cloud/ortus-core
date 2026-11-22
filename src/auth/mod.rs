@@ -17,6 +17,7 @@ pub mod limits;
 pub mod mail_text;
 pub mod passkeys;
 pub mod personal;
+pub mod phone_link;
 pub mod photos;
 pub mod policy;
 pub mod routes;

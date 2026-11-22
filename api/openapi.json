@@ -2667,6 +2667,88 @@
         ]
       }
     },
+    "/api/v1/me/phone-link": {
+      "get": {
+        "description": "For anyone signed in.",
+        "operationId": "getPhoneLink",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Whether your latest phone link was used (used_at) and by what (agent).",
+        "tags": [
+          "sessions"
+        ]
+      },
+      "post": {
+        "description": "For anyone signed in.",
+        "operationId": "makePhoneLink",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "A one-time link (and QR code) that signs the Ortus app in as you: it works once, for five minutes; a newer one replaces it.",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
     "/api/v1/me/photo": {
       "delete": {
         "description": "For anyone signed in.",
@@ -3923,6 +4005,42 @@
         "summary": "Sign in with an address and password. When the account has an authenticator app, answers {next: \"code\", ticket} for the one-time code.",
         "tags": [
           "accounts"
+        ]
+      }
+    },
+    "/api/v1/session/phone-link": {
+      "post": {
+        "operationId": "followPhoneLink",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "summary": "The app follows a phone link: {token}. Signs in as its person; next, add a sign-in method.",
+        "tags": [
+          "sessions"
         ]
       }
     },

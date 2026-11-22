@@ -10,6 +10,8 @@ import { OrtusAccept } from "./ortus-accept.js";
 export interface Relayed {
   server: string;
   code: string;
+  /** An invitation (`c=`), or a code that signs the app in (`p=`). */
+  kind: "invite" | "phone";
 }
 
 /**
@@ -18,7 +20,8 @@ export interface Relayed {
  */
 export function relayed(fragment: string): Relayed | undefined {
   const params = new URLSearchParams(fragment);
-  const code = params.get("c") ?? "";
+  const kind = params.has("p") ? "phone" : "invite";
+  const code = params.get(kind === "phone" ? "p" : "c") ?? "";
   let server: URL;
   try {
     server = new URL(params.get("s") ?? "");
@@ -28,7 +31,7 @@ export function relayed(fragment: string): Relayed | undefined {
   const local = ["localhost", "127.0.0.1"].includes(server.hostname);
   if (!(server.protocol === "https:" || (server.protocol === "http:" && local))) return undefined;
   if (!/^[A-Za-z0-9_-]{16,200}$/.test(code)) return undefined;
-  return { server: server.origin, code };
+  return { server: server.origin, code, kind };
 }
 
 /**
@@ -75,7 +78,13 @@ export class OrtusRelay extends LitElement {
       <main class="card">
         <span class="mark">${unsafeSVG(MARK)}</span>
         <h1>${t(this.localize, "accept.title")}</h1>
-        ${i
+        ${i?.kind === "phone"
+          ? html`<p class="lead">${t(this.localize, "relay.phoneLead", { host })}</p>
+              ${OrtusAccept.onPhone()
+                ? html`<a class="button primary" href=${`ortus://signin?server=${encodeURIComponent(i.server)}&code=${encodeURIComponent(i.code)}`}>${t(this.localize, "accept.openApp")}</a>
+                    <p class="hint">${t(this.localize, "accept.noApp")}</p>`
+                : html`<p class="hint">${t(this.localize, "relay.phoneOnComputer")}</p>`}`
+          : i
           ? html`<p class="lead">${t(this.localize, "relay.lead", { host })}</p>
               ${OrtusAccept.onPhone()
                 ? html`<a class="button primary" href=${`ortus://join?server=${encodeURIComponent(i.server)}&code=${encodeURIComponent(i.code)}`}>

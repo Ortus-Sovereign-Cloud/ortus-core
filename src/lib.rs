@@ -61,6 +61,7 @@ pub fn schemas() -> Vec<storage::Schema> {
         auth::policy::SCHEMA,
         auth::personal::SCHEMA,
         auth::photos::SCHEMA,
+        auth::phone_link::SCHEMA,
         policy::SCHEMA,
         retention::SCHEMA,
         outbound::SCHEMA,
