@@ -114,10 +114,11 @@ pub async fn add_in(tx: &mut dyn AsyncTx, user: &str, n: &Notice<'_>) -> StoreRe
         "/".to_string()
     };
     let template = json!({"key": n.key, "args": n.args}).to_string();
+    let id = format!("n{}", crate::auth::random_hex(12));
     tx.execute(
         "INSERT INTO core_notifications (id, user_id, app, kind, title, detail, path, template, at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
         &[
-            format!("n{}", crate::auth::random_hex(12)).into(),
+            id.as_str().into(),
             user.into(),
             clip(n.app, 40).into(),
             n.kind.name().into(),
@@ -129,6 +130,8 @@ pub async fn add_in(tx: &mut dyn AsyncTx, user: &str, n: &Notice<'_>) -> StoreRe
         ],
     )
     .await?;
+    // Phones hear of it (a job: no network work in this transaction).
+    crate::push::queue_in(tx, user, &id).await?;
     // Beyond the newest KEEP of each sort, the oldest go: approvals are
     // kept apart, so a noisy feed of alerts never pushes them out (a form
     // both databases take).

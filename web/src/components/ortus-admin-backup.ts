@@ -37,6 +37,13 @@ interface Integrations {
   signIn: { name: string; host: string }[];
 }
 
+interface Push {
+  enabled: boolean;
+  gateway: string;
+  own_apple_key: boolean;
+  devices: number;
+}
+
 interface Person {
   id: string;
   name: string;
@@ -343,6 +350,7 @@ export class OrtusAdminBackup extends LitElement {
   @state() private adding = false;
   @state() private secret = "";
   @state() private hookError = "";
+  @state() private push: Push | null = null;
 
 
   override connectedCallback(): void {
@@ -373,6 +381,20 @@ export class OrtusAdminBackup extends LitElement {
       this.integrations = await call<Integrations>("GET", "/admin/integrations");
     } catch {
       this.integrations = null;
+    }
+    try {
+      this.push = await call<Push>("GET", "/admin/push");
+    } catch {
+      this.push = null;
+    }
+  }
+
+  private async setPush(enabled: boolean): Promise<void> {
+    this.hookError = "";
+    try {
+      this.push = await call<Push>("PUT", "/admin/push", { enabled });
+    } catch (e) {
+      this.hookError = e instanceof ApiError ? e.message : String(e);
     }
   }
 
@@ -469,6 +491,22 @@ export class OrtusAdminBackup extends LitElement {
           i.signIn.length ? i.signIn.map((p) => p.name).join(", ") : t(this.localize, "integrations.signInNone"),
           i.signIn.length ? on(t(this.localize, "integrations.connected")) : off(t(this.localize, "integrations.off")),
         )}
+        ${this.push
+          ? row(
+              "PN",
+              t(this.localize, "integrations.push"),
+              t(this.localize, "integrations.pushAbout"),
+              this.push.enabled ? on(t(this.localize, "integrations.pushPhones", { count: String(this.push.devices) })) : off(t(this.localize, "integrations.off")),
+              html`<span class="tools">
+                ${this.push.enabled && !this.push.own_apple_key
+                  ? html`<span class="via">${t(this.localize, "integrations.pushVia", { gateway: new URL(this.push.gateway).host })}</span>`
+                  : nothing}
+                <button class="link" data-push @click=${() => this.setPush(!this.push?.enabled)}>
+                  ${t(this.localize, this.push.enabled ? "integrations.pushOff" : "integrations.pushOn")}
+                </button>
+              </span>`,
+            )
+          : nothing}
         ${row("SMS", t(this.localize, "integrations.sms"), t(this.localize, "integrations.smsAbout"), off(t(this.localize, "integrations.off")))}
       </ul>
       ${this.secret

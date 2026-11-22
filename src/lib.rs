@@ -27,6 +27,7 @@ pub mod outbound;
 pub mod points;
 pub mod policy;
 pub mod program;
+pub mod push;
 pub mod retention;
 pub mod runtime;
 pub mod search;
@@ -71,6 +72,7 @@ pub fn schemas() -> Vec<storage::Schema> {
         auth::saml::SCHEMA,
         search::SCHEMA,
         notify::SCHEMA,
+        push::SCHEMA,
         points::SCHEMA,
         webhooks::SCHEMA,
     ]
@@ -102,6 +104,7 @@ pub fn core_outside_jobs(instance: &Arc<Instance>) -> Vec<app::OutsideJobKind> {
         points::job(Arc::clone(instance)),
         points::test_job(Arc::clone(instance)),
         webhooks::job(Arc::clone(instance)),
+        push::job(Arc::clone(instance)),
     ]
 }
 

@@ -483,6 +483,7 @@ pub(crate) async fn erase_in(
         "DELETE FROM core_oidc_tokens WHERE user_id = $1",
         "DELETE FROM core_signups WHERE user_id = $1",
         "DELETE FROM core_photos WHERE user_id = $1",
+        "DELETE FROM core_push_devices WHERE user_id = $1",
         "DELETE FROM core_phone_links WHERE user_id = $1",
         "DELETE FROM core_users WHERE id = $1",
     ] {

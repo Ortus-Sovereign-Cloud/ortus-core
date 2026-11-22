@@ -90,6 +90,20 @@ test("an owner adds a webhook, tests it and removes it", async ({ page }) => {
   await expect(card.getByRole("listitem").filter({ hasText: "Case management system" })).toHaveCount(0);
 });
 
+test("an administrator turns phone notifications on and off", async ({ page }) => {
+  await page.goto("/admin/backup");
+  const card = page.locator("ortus-admin-backup").getByRole("region", { name: en["integrations.title"] });
+  const row = card.getByRole("listitem").filter({ hasText: en["integrations.push"] });
+  await expect(row).toContainText(en["integrations.pushAbout"]);
+  await expect(row).toContainText(en["integrations.off"]);
+  await row.getByRole("button", { name: en["integrations.pushOn"] }).click();
+  await expect(row).toContainText(en["integrations.pushPhones"].replace("{count}", "0"));
+  // No Apple key on this installation: pushes go through the publisher's gateway.
+  await expect(row).toContainText(en["integrations.pushVia"].replace("{gateway}", "ortus.cc"));
+  await row.getByRole("button", { name: en["integrations.pushOff"] }).click();
+  await expect(row).toContainText(en["integrations.off"]);
+});
+
 for (const locale of LOCALES) {
   const catalog = CATALOGS[locale.code as Code];
   test(`backup and restore is in ${locale.name}`, async ({ page }) => {
