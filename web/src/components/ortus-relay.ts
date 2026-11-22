@@ -77,7 +77,7 @@ export class OrtusRelay extends LitElement {
     return html`
       <main class="card">
         <span class="mark">${unsafeSVG(MARK)}</span>
-        <h1>${t(this.localize, "accept.title")}</h1>
+        <h1>${t(this.localize, i?.kind === "phone" ? "phone.title" : "accept.title")}</h1>
         ${i?.kind === "phone"
           ? html`<p class="lead">${t(this.localize, "relay.phoneLead", { host })}</p>
               ${OrtusAccept.onPhone()

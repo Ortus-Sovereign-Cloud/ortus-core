@@ -80,6 +80,7 @@ test("a person signs in on their phone from the web with a one-time code", async
   const relay = await (await browser.newContext({ storageState: { cookies: [], origins: [] } })).newPage();
   await relay.goto(`/i#${link.split("#")[1]}`);
   await expect(relay.getByText(en["relay.phoneOnComputer"])).toBeVisible();
+  await expect(relay.getByRole("heading", { name: en["phone.title"] })).toBeVisible();
 
   // The app follows it: signed in as Iryna; the web says so.
   const phone = await relay.request.post("/api/v1/session/phone-link", { headers: { "X-Requested-With": "ortus", "User-Agent": "Ortus/1 CFNetwork/3826 Darwin/25.0.0" }, data: { token: code } });
