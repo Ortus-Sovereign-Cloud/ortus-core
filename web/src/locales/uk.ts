@@ -4,6 +4,7 @@ const uk: Messages = {
   "shell.apps": "Застосунки",
   "shell.home": "Головна сторінка Ortus",
   "shell.allApps": "Усі застосунки",
+  "shell.disconnected": "Немає з’єднання. Те, що ви бачите, може бути застарілим; Ortus продовжить, щойно воно з’явиться.",
   "shell.allAppsShort": "Усі",
   "today.morning": "Доброго ранку, {name}",
   "today.afternoon": "Добрий день, {name}",

@@ -4,6 +4,7 @@ const ar: Messages = {
   "shell.apps": "التطبيقات",
   "shell.home": "الصفحة الرئيسية لـ Ortus",
   "shell.allApps": "كل التطبيقات",
+  "shell.disconnected": "لا يوجد اتصال. قد لا يكون ما تراه محدّثًا؛ يتابع Ortus عند عودته.",
   "shell.allAppsShort": "الكل",
   "today.morning": "صباح الخير، {name}",
   "today.afternoon": "مساء الخير، {name}",

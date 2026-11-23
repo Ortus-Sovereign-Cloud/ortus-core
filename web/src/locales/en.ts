@@ -5,6 +5,7 @@ const en = {
   "shell.apps": "Apps",
   "shell.home": "Ortus home",
   "shell.allApps": "All apps",
+  "shell.disconnected": "No connection. What you see may be out of date; Ortus carries on when it is back.",
   "shell.allAppsShort": "All apps",
   "today.morning": "Good morning, {name}",
   "today.afternoon": "Good afternoon, {name}",

@@ -296,3 +296,14 @@ test("the start page greets the person, with a card from each app that has one",
   await expect(page.getByRole("heading", { level: 1, name: en["switcher.title"] })).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test("each page has its own title, and a lost connection is said", async ({ page, context }) => {
+  await page.goto("/settings");
+  await expect(page).toHaveTitle(`${en["account.settings"]} · Ortus`);
+  await page.goto("/apps");
+  await expect(page).toHaveTitle(`${en["shell.allApps"]} · Ortus`);
+  await context.setOffline(true);
+  await expect(page.getByRole("status").filter({ hasText: en["shell.disconnected"] })).toBeVisible();
+  await context.setOffline(false);
+  await expect(page.getByText(en["shell.disconnected"])).toBeHidden();
+});

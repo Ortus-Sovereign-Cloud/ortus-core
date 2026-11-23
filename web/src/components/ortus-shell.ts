@@ -31,6 +31,14 @@ export class OrtusShell extends LitElement {
   static override styles = [
     tileTints,
     css`
+      .disconnected {
+        margin: 0;
+        padding: 8px 16px;
+        background: var(--ortus-surface);
+        color: var(--ortus-text-2);
+        border-block-end: 1px solid var(--ortus-line-strong);
+        font-size: 14px;
+      }
     :host {
       display: flex;
       block-size: 100vh;
@@ -292,11 +300,40 @@ export class OrtusShell extends LitElement {
   private readonly appsTried = new Set<string>();
   @state() private apps: InstalledApp[] | undefined;
   @state() private failed = false;
+  /** The browser has no connection: what is on screen may be out of date. */
+  @state() private disconnected = typeof navigator !== "undefined" && navigator.onLine === false;
+  private readonly connection = () => {
+    this.disconnected = navigator.onLine === false;
+  };
   @state() private languageOpen = false;
 
   override connectedCallback(): void {
     super.connectedCallback();
+    window.addEventListener("online", this.connection);
+    window.addEventListener("offline", this.connection);
     void this.load();
+  }
+
+  override disconnectedCallback(): void {
+    window.removeEventListener("online", this.connection);
+    window.removeEventListener("offline", this.connection);
+    super.disconnectedCallback();
+  }
+
+  /** Each page has its own title: the app or section, then Ortus. */
+  override updated(): void {
+    const path = location.pathname;
+    const app = this.current();
+    const name = app
+      ? app.id === "admin"
+        ? t(this.localize, "admin.title")
+        : appName(this.localize, app.id)
+      : path.startsWith("/settings")
+        ? t(this.localize, "account.settings")
+        : path === "/apps"
+          ? t(this.localize, "shell.allApps")
+          : "";
+    document.title = name ? `${name} · Ortus` : "Ortus";
   }
 
   private async load(): Promise<void> {
@@ -407,6 +444,7 @@ export class OrtusShell extends LitElement {
         </div>
       </nav>
       <main id="content" tabindex="-1">
+        ${this.disconnected ? html`<p class="disconnected" role="status">${t(this.localize, "shell.disconnected")}</p>` : nothing}
         ${this.screen()}
       </main>
       ${this.me ? html`<ortus-search></ortus-search>` : nothing}
