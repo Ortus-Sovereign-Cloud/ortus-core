@@ -55,9 +55,11 @@ pub async fn authenticate(
     let store = instance.store.as_ref();
     // Their own counters: a phone's tries neither lock nor unlock the
     // web sign-in of the same person.
+    // By network (an IPv6 /64 is one), as for signing in on the web.
+    let network = limits::network(client);
     let keys = vec![
-        format!("app:{}|{client}", email.trim().to_lowercase()),
-        format!("app-ip:{client}"),
+        format!("app:{}|{network}", email.trim().to_lowercase()),
+        format!("app-ip:{network}"),
     ];
     for key in &keys {
         if let Ok(Some(until)) = limits::blocked_until(store, key, now_ms()).await {
