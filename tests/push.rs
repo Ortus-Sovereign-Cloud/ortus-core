@@ -21,6 +21,7 @@ use rust_web_server::test_client::TestClient;
 use serde_json::{json, Value};
 
 const LIVE: &str = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90";
+const VOIP: &str = "f00df00df00df00df00df00df00df00df00df00df00df00df00df00df00df00d";
 const GONE: &str = "dead0000000000000000000000000000dead0000000000000000000000000000";
 
 #[derive(Clone, Debug)]
@@ -221,15 +222,19 @@ fn user_id(store: &dyn AsyncStore, email: &str) -> String {
 }
 
 fn notice(store: &dyn AsyncStore, user: &str, title: &str) -> String {
+    notice_in(store, user, title, "chat", "/chat")
+}
+
+fn notice_in(store: &dyn AsyncStore, user: &str, title: &str, app: &str, path: &str) -> String {
     block_on(ortus_core::notify::add(
         store,
         user,
         &Notice {
-            app: "chat",
+            app,
             kind: Kind::Mention,
             title,
             detail: "now",
-            path: "/chat",
+            path,
             key: None,
             args: json!({}),
         },
@@ -355,7 +360,7 @@ fn push(store: Arc<dyn AsyncStore>) {
         Some(apple(LIVE, "production")),
     );
     assert_eq!(200, status, "{live}");
-    let fetch = live["fetch_token"].as_str().unwrap().to_string();
+    assert!(live["fetch_token"].as_str().is_some_and(|f| f.len() >= 32));
     assert_eq!(
         200,
         call(
@@ -438,6 +443,56 @@ fn push(store: Arc<dyn AsyncStore>) {
         "{left:?}"
     );
 
+    // An iPhone that rings: its VoIP token takes calls (PushKit), its
+    // ordinary token everything else; UnifiedPush hears it is a call.
+    let mut ringing = apple(LIVE, "production");
+    ringing["voip"] = json!(VOIP);
+    let (status, again) = call(&client, &olena, "POST", "/me/push-devices", Some(ringing));
+    assert_eq!(200, status, "{again}");
+    let fetch = again["fetch_token"].as_str().unwrap().to_string();
+    let mut bad = apple(LIVE, "production");
+    bad["voip"] = json!("not-hex");
+    assert_eq!(
+        400,
+        call(&client, &olena, "POST", "/me/push-devices", Some(bad)).0
+    );
+    fakes.apple.lock().unwrap().clear();
+    fakes.unified.lock().unwrap().clear();
+    let ring = notice_in(
+        s,
+        &olena_id,
+        "Taras is calling in #flood-response",
+        "calls",
+        "/calls?room=r1",
+    );
+    run_push(&instance, &ring);
+    let seen = fakes.apple.lock().unwrap().clone();
+    assert_eq!(1, seen.len(), "{seen:?}");
+    assert_eq!(format!("/3/device/{VOIP}"), seen[0].path);
+    assert_eq!("voip", seen[0].header("apns-push-type"));
+    assert_eq!("cc.ortus.app.voip", seen[0].header("apns-topic"));
+    let body: Value = serde_json::from_str(&seen[0].body).unwrap();
+    assert_eq!(
+        json!({"n": ring, "s": body["s"], "c": 1}),
+        body,
+        "no content, no alert"
+    );
+    let unified = fakes.unified.lock().unwrap().clone();
+    assert!(
+        unified.len() == 1 && unified[0].contains("\"c\":1"),
+        "{unified:?}"
+    );
+    fakes.apple.lock().unwrap().clear();
+    let plain = notice(s, &olena_id, "Not a call");
+    run_push(&instance, &plain);
+    let seen = fakes.apple.lock().unwrap().clone();
+    assert!(
+        seen.len() == 1
+            && seen[0].path == format!("/3/device/{LIVE}")
+            && seen[0].header("apns-push-type") == "alert",
+        "{seen:?}"
+    );
+
     // The phone reads the text with its fetch token, and only its person's.
     let read = |token: &str, id: &str| {
         let r = client
@@ -465,6 +520,27 @@ fn push(store: Arc<dyn AsyncStore>) {
             .send()
             .status()
     );
+
+    // An expired session's phone reads nothing (the row may linger).
+    let kept: i64 = block_on(s.query(
+        "SELECT expires_at FROM core_sessions WHERE user_id = $1",
+        &[olena_id.as_str().into()],
+    ))
+    .unwrap()[0]
+        .int(0)
+        .unwrap();
+    block_on(s.execute(
+        "UPDATE core_sessions SET expires_at = 1 WHERE user_id = $1",
+        &[olena_id.as_str().into()],
+    ))
+    .unwrap();
+    assert_eq!(401, read(&fetch, &id).0, "expired");
+    block_on(s.execute(
+        "UPDATE core_sessions SET expires_at = $1 WHERE user_id = $2",
+        &[kept.into(), olena_id.as_str().into()],
+    ))
+    .unwrap();
+    assert_eq!(200, read(&fetch, &id).0);
 
     // The gateway passes one push on, with nothing of its content.
     fakes.apple.lock().unwrap().clear();

@@ -82,7 +82,7 @@ pub struct Notice<'a> {
     pub path: &'a str,
     /// The title as interface text, shown in each person's language: a
     /// template of the core's ("mention": "{who} mentioned you in
-    /// {where}"; also review, task, taskDone, suggestion, record, invite, mailDelayed,
+    /// {where}"; also review, task, taskDone, suggestion, record, invite, mailDelayed, callStarted,
     /// mailNotDelivered)
     /// with its `args`; `title` is the fallback. None for content (an
     /// alert's own words).

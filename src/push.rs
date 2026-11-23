@@ -38,10 +38,11 @@ use crate::oidc::sha256_hex;
 use crate::program::now_ms;
 use crate::storage::{AsyncStore, BoxFuture, Migration, Schema, StoreResult};
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "phones for notifications",
-    sql: "CREATE TABLE core_push_devices (
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "phones for notifications",
+        sql: "CREATE TABLE core_push_devices (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL REFERENCES core_users (id),
         session_hash TEXT NOT NULL,
@@ -54,7 +55,13 @@ const MIGRATIONS: &[Migration] = &[Migration {
     );
     CREATE UNIQUE INDEX core_push_devices_token ON core_push_devices (platform, token);
     CREATE INDEX core_push_devices_user ON core_push_devices (user_id)",
-}];
+    },
+    Migration {
+        version: 2,
+        name: "phones that ring for calls",
+        sql: "ALTER TABLE core_push_devices ADD COLUMN voip TEXT",
+    },
+];
 
 pub const SCHEMA: Schema = Schema {
     app: "core.push",
@@ -183,6 +190,13 @@ struct Register {
     environment: Option<String>,
     #[serde(default)]
     utc_offset: i64,
+    /// An iPhone's VoIP token (PushKit): calls ring on it.
+    #[serde(default)]
+    voip: Option<String>,
+}
+
+fn apple_token(t: &str) -> bool {
+    (32..=200).contains(&t.len()) && t.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 fn refused(status: u16, code: &'static str, message: &str) -> ApiError {
@@ -208,6 +222,20 @@ async fn register(request: &Request, ortus: &Arc<Instance>) -> Result<Response, 
     }
     let input: Register = body(request)?;
     let token = input.token.trim().to_string();
+    let voip = input
+        .voip
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_string);
+    if voip
+        .as_deref()
+        .is_some_and(|v| input.platform != "apns" || !apple_token(v))
+    {
+        return Err(ApiError::bad_request(
+            "voip is an Apple VoIP token (hexadecimal).",
+        ));
+    }
     let environment = match input.platform.as_str() {
         "apns" => {
             if token.len() < 32
@@ -266,7 +294,7 @@ async fn register(request: &Request, ortus: &Arc<Instance>) -> Result<Response, 
     )
     .await?;
     tx.execute(
-        "INSERT INTO core_push_devices (id, user_id, session_hash, platform, token, environment, fetch_hash, utc_offset, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        "INSERT INTO core_push_devices (id, user_id, session_hash, platform, token, environment, fetch_hash, utc_offset, created_at, voip) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
         &[
             id.as_str().into(),
             user.as_str().into(),
@@ -277,6 +305,7 @@ async fn register(request: &Request, ortus: &Arc<Instance>) -> Result<Response, 
             sha256_hex(&fetch).into(),
             input.utc_offset.clamp(-14 * 60, 14 * 60).into(),
             now_ms().into(),
+            voip.into(),
         ],
     )
     .await?;
@@ -320,8 +349,9 @@ async fn notice(
     let store = ortus.store.as_ref();
     let device = store
         .query(
-            "SELECT d.user_id FROM core_push_devices d JOIN core_sessions s ON s.token_hash = d.session_hash WHERE d.fetch_hash = $1",
-            &[sha256_hex(&token).into()],
+            // Only while its session lasts and its person is active.
+            "SELECT d.user_id FROM core_push_devices d JOIN core_sessions s ON s.token_hash = d.session_hash JOIN core_users u ON u.id = d.user_id WHERE d.fetch_hash = $1 AND s.expires_at > $2 AND u.state = 'active'",
+            &[sha256_hex(&token).into(), now_ms().into()],
         )
         .await?;
     let user = device
@@ -465,6 +495,7 @@ impl Apns {
         environment: &str,
         notification: &str,
         server: &str,
+        voip: bool,
     ) -> Result<bool, String> {
         let host = match (&self.url, environment) {
             (Some(u), _) => u.trim_end_matches('/').to_string(),
@@ -472,21 +503,30 @@ impl Apns {
             (None, _) => "https://api.push.apple.com".into(),
         };
         let client = apns_client(host.starts_with("http://"))?;
-        let payload = json!({
-            "aps": {"alert": {"loc-key": "push.new"}, "mutable-content": 1, "sound": "default"},
-            "n": notification,
-            "s": server,
-        });
+        // A call rings through PushKit (the app shows it with CallKit); it
+        // is worth nothing a minute later, so Apple keeps it no longer.
+        let (payload, topic, kind, expires) = if voip {
+            (
+                json!({"n": notification, "s": server, "c": 1}),
+                format!("{}.voip", self.topic),
+                "voip",
+                (now_ms() / 1000) + 60,
+            )
+        } else {
+            (
+                json!({"aps": {"alert": {"loc-key": "push.new"}, "mutable-content": 1, "sound": "default"}, "n": notification, "s": server}),
+                self.topic.clone(),
+                "alert",
+                (now_ms() / 1000) + 24 * 3600,
+            )
+        };
         let r = client
             .post(format!("{host}/3/device/{token}"))
             .header("authorization", format!("bearer {}", self.jwt()?))
-            .header("apns-topic", &self.topic)
-            .header("apns-push-type", "alert")
+            .header("apns-topic", &topic)
+            .header("apns-push-type", kind)
             .header("apns-priority", "10")
-            .header(
-                "apns-expiration",
-                ((now_ms() / 1000) + 24 * 3600).to_string(),
-            )
+            .header("apns-expiration", expires.to_string())
             .body(payload.to_string())
             .send()
             .await
@@ -556,6 +596,9 @@ struct GatewayPush {
     environment: String,
     notification: String,
     server: String,
+    /// "voip" for a call.
+    #[serde(default)]
+    kind: Option<String>,
 }
 
 /// The gateway: an installation hands over one Apple push (token, id,
@@ -587,9 +630,12 @@ async fn gateway_push(
             .notification
             .bytes()
             .all(|b| b.is_ascii_alphanumeric());
-    let server_ok = input.server.starts_with("https://") && input.server.len() <= 300
-        || input.server.starts_with("http://127.0.0.1")
-        || input.server.starts_with("http://localhost");
+    // An installation's own address: https, or a local test server.
+    let server_ok = input.server.len() <= 300
+        && reqwest::Url::parse(&input.server).is_ok_and(|u| {
+            u.scheme() == "https" && u.host_str().is_some()
+                || u.scheme() == "http" && matches!(u.host_str(), Some("127.0.0.1" | "localhost"))
+        });
     if !token_ok
         || !id_ok
         || !server_ok
@@ -605,6 +651,7 @@ async fn gateway_push(
             &input.environment,
             &input.notification,
             &input.server,
+            input.kind.as_deref() == Some("voip"),
         )
         .await
     {
@@ -633,20 +680,29 @@ pub async fn send_job(instance: &Instance, payload: &str) -> Result<(), String> 
     // the phone's next user must not get this one's notifications.
     store
         .execute(
-            "DELETE FROM core_push_devices WHERE user_id = $1 AND session_hash NOT IN (SELECT token_hash FROM core_sessions)",
-            &[job.user.as_str().into()],
+            "DELETE FROM core_push_devices WHERE user_id = $1 AND session_hash NOT IN (SELECT token_hash FROM core_sessions WHERE expires_at > $2)",
+            &[job.user.as_str().into(), now_ms().into()],
         )
         .await
         .map_err(fail)?;
     let devices = store
         .query(
-            "SELECT id, platform, token, environment, utc_offset FROM core_push_devices WHERE user_id = $1",
+            "SELECT id, platform, token, environment, utc_offset, voip FROM core_push_devices WHERE user_id = $1",
             &[job.user.as_str().into()],
         )
         .await
         .map_err(fail)?;
     let server = instance.config.public_url.trim_end_matches('/').to_string();
     let gateway_url = gateway(store).await.map_err(fail)?;
+    // A call rings (iPhone: through PushKit; Android: a full-screen call).
+    let call = !store
+        .query(
+            "SELECT 1 FROM core_notifications WHERE id = $1 AND app = 'calls' AND path LIKE '/calls%'",
+            &[job.notification.as_str().into()],
+        )
+        .await
+        .map_err(fail)?
+        .is_empty();
     let own = Apns::from_env();
     let mut errors = Vec::new();
     for d in &devices {
@@ -666,12 +722,18 @@ pub async fn send_job(instance: &Instance, payload: &str) -> Result<(), String> 
         let gone = match platform {
             "apns" => {
                 let env = d.text(3).unwrap_or("production");
+                let (to, voip) = match d.text(5).filter(|v| call && !v.is_empty()) {
+                    Some(v) => (v, true),
+                    None => (token, false),
+                };
                 match &own {
-                    Some(apns) => apns.send(token, env, &job.notification, &server).await,
-                    None => via_gateway(&gateway_url, token, env, &job.notification, &server).await,
+                    Some(apns) => apns.send(to, env, &job.notification, &server, voip).await,
+                    None => {
+                        via_gateway(&gateway_url, to, env, &job.notification, &server, voip).await
+                    }
                 }
             }
-            "unifiedpush" => unified_push(token, &job.notification, &server).await,
+            "unifiedpush" => unified_push(token, &job.notification, &server, call).await,
             _ => Ok(false),
         };
         match gone {
@@ -700,13 +762,14 @@ async fn via_gateway(
     environment: &str,
     notification: &str,
     server: &str,
+    voip: bool,
 ) -> Result<bool, String> {
     let client = crate::http::client()?;
     let r = client
         .post(gateway)
         .header("X-Requested-With", "ortus")
         .header("Content-Type", "application/json")
-        .body(json!({ "token": token, "environment": environment, "notification": notification, "server": server }).to_string())
+        .body(json!({ "token": token, "environment": environment, "notification": notification, "server": server, "kind": if voip { "voip" } else { "alert" } }).to_string())
         .send()
         .await
         .map_err(|e| format!("push gateway: {e}"))?;
@@ -720,7 +783,12 @@ async fn via_gateway(
 
 /// UnifiedPush: a POST to the phone's endpoint (a public https address,
 /// checked again now and connected to as checked; no redirects).
-async fn unified_push(endpoint: &str, notification: &str, server: &str) -> Result<bool, String> {
+async fn unified_push(
+    endpoint: &str,
+    notification: &str,
+    server: &str,
+    call: bool,
+) -> Result<bool, String> {
     let Ok((host, addr)) = public_endpoint(endpoint).await else {
         return Ok(true);
     };
@@ -735,7 +803,14 @@ async fn unified_push(endpoint: &str, notification: &str, server: &str) -> Resul
     let r = client
         .post(endpoint)
         .header("Content-Type", "application/json")
-        .body(json!({ "n": notification, "s": server }).to_string())
+        .body(
+            if call {
+                json!({ "n": notification, "s": server, "c": 1 })
+            } else {
+                json!({ "n": notification, "s": server })
+            }
+            .to_string(),
+        )
         .send()
         .await
         .map_err(|e| format!("UnifiedPush endpoint: {e}"))?;

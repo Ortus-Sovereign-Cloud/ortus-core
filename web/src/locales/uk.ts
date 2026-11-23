@@ -39,6 +39,7 @@ const uk: Messages = {
   "notify.t.record": "Новий запис у справі {case}",
   "notify.t.invite": "{who} запрошує вас на {what}",
   "notify.t.mailDelayed": "Лист до {to} затримується; Ortus пробує знову",
+  "notify.t.callStarted": "{who} розпочинає дзвінок у {room}",
   "notify.t.mailNotDelivered": "Лист до {to} не доставлено",
   "notify.d.due": "до {time}",
   "notify.d.from": "{from} у {where}",

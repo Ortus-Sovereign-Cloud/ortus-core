@@ -40,6 +40,7 @@ const en = {
   "notify.t.record": "New record filed to case {case}",
   "notify.t.invite": "{who} invited you to {what}",
   "notify.t.mailDelayed": "Your message to {to} is delayed; Ortus keeps trying",
+  "notify.t.callStarted": "{who} started a call in {room}",
   "notify.t.mailNotDelivered": "Your message to {to} was not delivered",
   "notify.d.due": "due {time}",
   "notify.d.from": "{from} in {where}",

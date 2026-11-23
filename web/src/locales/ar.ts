@@ -39,6 +39,7 @@ const ar: Messages = {
   "notify.t.record": "سجل جديد في القضية {case}",
   "notify.t.invite": "دعاك {who} إلى {what}",
   "notify.t.mailDelayed": "رسالتك إلى {to} متأخرة؛ يواصل Ortus المحاولة",
+  "notify.t.callStarted": "بدأ {who} مكالمة في {room}",
   "notify.t.mailNotDelivered": "لم تُسلَّم رسالتك إلى {to}",
   "notify.d.due": "الموعد {time}",
   "notify.d.from": "{from} في {where}",

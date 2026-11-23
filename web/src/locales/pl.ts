@@ -39,6 +39,7 @@ const pl: Messages = {
   "notify.t.record": "Nowy dokument w sprawie {case}",
   "notify.t.invite": "{who} zaprasza cię na {what}",
   "notify.t.mailDelayed": "Wiadomość do {to} jest opóźniona; Ortus wciąż próbuje",
+  "notify.t.callStarted": "{who} rozpoczyna rozmowę w {room}",
   "notify.t.mailNotDelivered": "Wiadomość do {to} nie została doręczona",
   "notify.d.due": "termin {time}",
   "notify.d.from": "{from} w {where}",
