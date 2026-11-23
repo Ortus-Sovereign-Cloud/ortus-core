@@ -424,6 +424,7 @@ async fn confirm_totp(request: &Request, ortus: &Arc<Instance>) -> Result<Respon
 
 async fn remove_totp(request: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiError> {
     let me = session(request, ortus).await?;
+    super::step_up::require(ortus.store.as_ref(), &me).await?;
     let store = ortus.store.as_ref();
     for credential in credentials::of_kind(store, &me.user.id, &credentials::Kind::Totp).await? {
         credentials::remove(store, &me.user.id, &credential.id).await?;
@@ -441,6 +442,7 @@ async fn remove_totp(request: &Request, ortus: &Arc<Instance>) -> Result<Respons
 
 async fn new_kit(request: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiError> {
     let me = session(request, ortus).await?;
+    super::step_up::require(ortus.store.as_ref(), &me).await?;
     let codes = credentials::new_recovery_kit(ortus.store.as_ref(), &me.user.id, now_ms()).await?;
     super::audit(
         ortus,

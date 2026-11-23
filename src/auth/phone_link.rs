@@ -60,7 +60,12 @@ fn qr(text: &str) -> Option<String> {
 
 /// A new link for the signed-in person (their older ones stop working).
 async fn create(request: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiError> {
-    let me = me(request, ortus).await?;
+    let session = super::current(request, ortus)
+        .await
+        .ok_or_else(ApiError::sign_in)?;
+    // A link makes a new session: only from one that proved it is them.
+    super::step_up::require(ortus.store.as_ref(), &session).await?;
+    let me = session.user;
     let store = ortus.store.as_ref();
     let token = super::random_hex(24);
     let now = now_ms();

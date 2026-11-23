@@ -4178,6 +4178,90 @@
         ]
       }
     },
+    "/api/v1/session/confirm": {
+      "post": {
+        "description": "For anyone signed in.",
+        "operationId": "confirmItIsYou",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Confirm it is you for the next ten minutes: {passkey: {id, clientDataJSON, authenticatorData, signature}} or {password, code}. Needed before a phone link, new recovery codes, removing the authenticator, a new passkey or signing.",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/api/v1/session/confirm/options": {
+      "post": {
+        "description": "For anyone signed in.",
+        "operationId": "startConfirm",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Options for navigator.credentials.get to confirm it is you (step-up) with one of your passkeys.",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
     "/api/v1/session/passkey": {
       "post": {
         "operationId": "signInWithPasskey",

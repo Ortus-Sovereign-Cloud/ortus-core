@@ -45,6 +45,24 @@ export async function removePasskey(id: string): Promise<void> {
   await call("DELETE", `/me/passkeys/${encodeURIComponent(id)}`);
 }
 
+/** Confirms it is the signed-in person with one of their passkeys (step-up). */
+export async function confirmWithPasskey(): Promise<void> {
+  const options = await call<Record<string, any>>("POST", "/session/confirm/options");
+  const credential = (await navigator.credentials.get({
+    publicKey: { ...options, challenge: toBytes(options.challenge), allowCredentials: [] } as PublicKeyCredentialRequestOptions,
+  })) as PublicKeyCredential | null;
+  if (!credential) throw new Error("cancelled");
+  const response = credential.response as AuthenticatorAssertionResponse;
+  await call("POST", "/session/confirm", {
+    passkey: {
+      id: credential.id,
+      clientDataJSON: toText(response.clientDataJSON),
+      authenticatorData: toText(response.authenticatorData),
+      signature: toText(response.signature),
+    },
+  });
+}
+
 /** Signs in with any passkey of this installation. */
 export async function signInWithPasskey<T>(): Promise<T> {
   const options = await call<Record<string, any>>("POST", "/session/passkey/options");

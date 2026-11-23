@@ -66,10 +66,25 @@ test("dropdowns show one chevron with room, mirrored right to left", async ({ pa
 
 test("a person signs in on their phone from the web with a one-time code", async ({ page, browser }) => {
   const { page: iryna, email } = await newcomer(page, browser);
+  // She joined by invitation: she adds a passkey, and a phone link (a new
+  // session) asks her to confirm it is her with it first (step-up).
+  const cdp = await iryna.context().newCDPSession(iryna);
+  await cdp.send("WebAuthn.enable");
+  await cdp.send("WebAuthn.addVirtualAuthenticator", {
+    options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true },
+  });
+  await iryna.goto("/settings/security");
+  await iryna.getByLabel(en["security.passkeyName"]).fill("Laptop");
+  await iryna.getByRole("button", { name: en["security.addPasskey"] }).click();
+  await expect(iryna.getByText(en["security.passkeyAdded"])).toBeVisible();
   await iryna.goto("/");
   await iryna.getByRole("button", { name: en["account.menu"] }).click();
-  const made = iryna.waitForResponse((r) => r.url().endsWith("/api/v1/me/phone-link") && r.request().method() === "POST");
+  const made = iryna.waitForResponse((r) => r.url().endsWith("/api/v1/me/phone-link") && r.request().method() === "POST" && r.ok());
   await iryna.getByRole("menu", { name: en["account.menu"] }).getByRole("menuitem", { name: en["account.phone"] }).click();
+  const stepUp = iryna.getByRole("dialog", { name: en["stepUp.title"] });
+  await expect(stepUp).toBeVisible();
+  await stepUp.getByRole("button", { name: en["stepUp.passkey"] }).click();
+  await expect(stepUp).toBeHidden();
   const dialog = iryna.getByRole("dialog", { name: en["phone.title"] });
   await expect(dialog.getByRole("img", { name: en["phone.qr"] })).toBeVisible();
   await expect(dialog).toContainText(en["phone.once"]);

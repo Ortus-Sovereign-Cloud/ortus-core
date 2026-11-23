@@ -94,6 +94,11 @@ pub(super) const MIGRATIONS: &[Migration] = &[
     CREATE INDEX core_signup_mails_email ON core_signup_mails (email, sent_at);
     CREATE INDEX core_signup_mails_address ON core_signup_mails (address, sent_at)",
     },
+    Migration {
+        version: 6,
+        name: "sessions that confirmed it is them",
+        sql: "ALTER TABLE core_sessions ADD COLUMN confirmed_at BIGINT",
+    },
 ];
 
 /// What a person may do in the installation as a whole.

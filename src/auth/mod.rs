@@ -26,6 +26,7 @@ pub mod saml_verify;
 pub mod sessions;
 pub mod setup;
 pub mod signup;
+pub mod step_up;
 pub mod webauthn;
 
 use std::sync::Arc;

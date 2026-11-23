@@ -16,6 +16,7 @@ import "./ortus-notifications.js";
 import "./ortus-avatar.js";
 import "./ortus-today.js";
 import "./ortus-phone-link.js";
+import "./ortus-step-up.js";
 
 /** How many apps the rail shows before "All apps". */
 const RAIL_APPS = 6;
@@ -387,7 +388,8 @@ export class OrtusShell extends LitElement {
                 </button>
                 <button role="menuitem" class="out" @click=${this.signOutHere}>${t(this.localize, "account.signOut")}</button>
               </div>
-              <ortus-phone-link></ortus-phone-link>`
+              <ortus-phone-link></ortus-phone-link>
+              <ortus-step-up></ortus-step-up>`
           : nothing}
         <div class="language">
           <button class="item" popovertarget="languages" aria-haspopup="menu" aria-expanded=${this.languageOpen ? "true" : "false"} aria-label=${t(this.localize, "language.label")}>

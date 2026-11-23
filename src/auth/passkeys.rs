@@ -97,6 +97,14 @@ fn decode(field: &str, value: &str) -> Result<Vec<u8>, ApiError> {
 }
 
 async fn register_options(request: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiError> {
+    // A new passkey outlasts the session: from a session begun in the last
+    // minutes (joining, a phone link, a recovery code) or one that confirmed
+    // it is them; never from an old session alone.
+    if let Some(me) = crate::auth::current(request, ortus).await {
+        if now_ms() - me.created_at >= super::step_up::WINDOW_MS {
+            super::step_up::require(ortus.store.as_ref(), &me).await?;
+        }
+    }
     let me = super::current(request, ortus)
         .await
         .ok_or_else(ApiError::sign_in)?;
@@ -173,6 +181,117 @@ async fn register(request: &Request, ortus: &Arc<Instance>) -> Result<Response, 
     )
     .await;
     Ok(ok(&json!({"id": id, "name": name})))
+}
+
+/// A challenge for confirming it is them (step-up), for the signed-in person.
+async fn confirm_options(request: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiError> {
+    let me = crate::auth::current(request, ortus)
+        .await
+        .ok_or_else(ApiError::sign_in)?;
+    let challenge = new_challenge(ortus.store.as_ref(), Some(&me.user.id), "confirm").await?;
+    Ok(ok(&json!({
+        "challenge": challenge,
+        "rpId": rp(ortus).id,
+        "timeout": CHALLENGE_MS,
+        "userVerification": "required",
+        "allowCredentials": [],
+    })))
+}
+
+#[derive(Deserialize)]
+struct Confirm {
+    #[serde(default)]
+    passkey: Option<PasskeyAnswer>,
+    #[serde(default)]
+    password: Option<String>,
+    #[serde(default)]
+    code: Option<String>,
+}
+
+/// The signed-in person confirms it is them: with one of their passkeys, or
+/// with their password and authenticator code. Limited like signing in.
+async fn confirm(
+    request: &Request,
+    connection: &ConnectionInfo,
+    ortus: &Arc<Instance>,
+) -> Result<Response, ApiError> {
+    let me = crate::auth::current(request, ortus)
+        .await
+        .ok_or_else(ApiError::sign_in)?;
+    let input: Confirm = body(request)?;
+    let store = ortus.store.as_ref();
+    let keys = vec![
+        format!("confirm:{}", me.user.id),
+        format!(
+            "ip:{}",
+            super::client_address(request, connection, &ortus.config.trusted_proxies)
+        ),
+    ];
+    for key in &keys {
+        if limits::blocked_until(store, key, now_ms()).await?.is_some() {
+            return Err(ApiError::too_many("Too many tries. Try again later."));
+        }
+    }
+    let good = if let Some(answer) = input.passkey {
+        let client_data = decode("clientDataJSON", &answer.client_data_json)?;
+        let authenticator_data = decode("authenticatorData", &answer.authenticator_data)?;
+        let signature = decode("signature", &answer.signature)?;
+        let challenge = answered_challenge(&client_data)?;
+        match take_challenge(store, &challenge, "confirm").await? {
+            Some(Some(owner)) if owner == me.user.id => {}
+            _ => return Err(refused("the request expired; try again")),
+        }
+        let id = row_id(&decode("id", &answer.id)?);
+        let rows = store
+            .query(
+                "SELECT data FROM core_credentials WHERE id = $1 AND kind = 'passkey' AND user_id = $2",
+                &[id.as_str().into(), me.user.id.as_str().into()],
+            )
+            .await?;
+        match rows.first() {
+            None => false,
+            Some(row) => {
+                let data: Value =
+                    serde_json::from_str(row.text(0).unwrap_or("{}")).unwrap_or_default();
+                let cose = unb64(data["cose_key"].as_str().unwrap_or_default()).unwrap_or_default();
+                let stored = u32::try_from(data["count"].as_u64().unwrap_or(0)).unwrap_or(0);
+                let assertion = Assertion {
+                    client_data_json: &client_data,
+                    authenticator_data: &authenticator_data,
+                    signature: &signature,
+                };
+                match webauthn::sign_in(&rp(ortus), &challenge, &assertion, &cose, stored, true) {
+                    Ok(count) => {
+                        let mut updated = data.clone();
+                        updated["count"] = json!(count);
+                        credentials::update(store, &id, &updated, now_ms()).await?;
+                        true
+                    }
+                    Err(_) => false,
+                }
+            }
+        }
+    } else {
+        let password = input.password.unwrap_or_default();
+        let code = input.code.unwrap_or_default();
+        let has_totp = !credentials::of_kind(store, &me.user.id, &credentials::Kind::Totp)
+            .await?
+            .is_empty();
+        has_totp
+            && credentials::check_password(store, &me.user.id, &password, now_ms()).await?
+            && credentials::check_totp(store, &ortus.keys, &me.user.id, &code, now_ms()).await?
+    };
+    if !good {
+        limits::failed(store, &keys, now_ms()).await?;
+        return Err(ApiError {
+            status: 403,
+            code: "not_confirmed",
+            message: "That did not confirm it is you.".into(),
+        });
+    }
+    limits::succeeded(store, &keys).await?;
+    super::step_up::record(store, &me).await?;
+    Ok(ok(&json!({ "confirmed": true })))
 }
 
 async fn sign_in_options(request: &Request, ortus: &Arc<Instance>) -> Result<Response, ApiError> {
@@ -339,6 +458,22 @@ fn h_register(
 ) -> BoxFuture<'static, Response> {
     Box::pin(async move { answer(&request, register(&request, &ortus).await) })
 }
+fn h_confirm_options(
+    request: Request,
+    _: PathParams,
+    _: ConnectionInfo,
+    ortus: Arc<Instance>,
+) -> BoxFuture<'static, Response> {
+    Box::pin(async move { answer(&request, confirm_options(&request, &ortus).await) })
+}
+fn h_confirm(
+    request: Request,
+    _: PathParams,
+    connection: ConnectionInfo,
+    ortus: Arc<Instance>,
+) -> BoxFuture<'static, Response> {
+    Box::pin(async move { answer(&request, confirm(&request, &connection, &ortus).await) })
+}
 fn h_sign_in_options(
     request: Request,
     _: PathParams,
@@ -393,6 +528,8 @@ pub fn routes() -> Vec<Route> {
         route(Method::Post, "/me/passkeys/options", "startMyPasskey", "Options for navigator.credentials.create: a fresh challenge, this installation and the account.", Access::Signed, h_register_options),
         route(Method::Post, "/me/passkeys", "addMyPasskey", "Add the passkey the browser made: {name, clientDataJSON, attestationObject}, base64url.", Access::Signed, h_register),
         route(Method::Delete, "/me/passkeys/:id", "removeMyPasskey", "Remove one of one's passkeys, unless it is the last way to sign in.", Access::Signed, h_remove),
+        route(Method::Post, "/session/confirm/options", "startConfirm", "Options for navigator.credentials.get to confirm it is you (step-up) with one of your passkeys.", Access::Signed, h_confirm_options),
+        route(Method::Post, "/session/confirm", "confirmItIsYou", "Confirm it is you for the next ten minutes: {passkey: {id, clientDataJSON, authenticatorData, signature}} or {password, code}. Needed before a phone link, new recovery codes, removing the authenticator, a new passkey or signing.", Access::Signed, h_confirm),
         route(Method::Post, "/session/passkey/options", "startPasskeySignIn", "Options for navigator.credentials.get: a fresh challenge for any passkey of this installation.", Access::Public, h_sign_in_options),
         route(Method::Post, "/session/passkey", "signInWithPasskey", "Sign in with the passkey's answer: {id, clientDataJSON, authenticatorData, signature, userHandle}, base64url.", Access::Public, h_sign_in),
     ]

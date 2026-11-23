@@ -177,7 +177,7 @@ pub mod testing_auth {
         block_on(sessions::start(
             store,
             &user.id,
-            "test",
+            "passkey",
             "",
             "",
             Lifetime::default(),

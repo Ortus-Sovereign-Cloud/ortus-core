@@ -26,7 +26,23 @@ export class ApiError extends Error {
   }
 }
 
-export async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+/** Asks the person to confirm it is them (step-up); set by the shell. */
+let stepUp: (() => Promise<void>) | null = null;
+export function onStepUp(handler: () => Promise<void>): void {
+  stepUp = handler;
+}
+
+/** What was sent, sent again as it was (a string stays text). */
+function payloadOf(sent: string | undefined): unknown {
+  if (sent === undefined) return undefined;
+  try {
+    return JSON.parse(sent) as unknown;
+  } catch {
+    return sent;
+  }
+}
+
+export async function call<T>(method: string, path: string, body?: unknown, again = true): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   // Every change says it comes from the Ortus client; other sites cannot.
   if (method !== "GET") headers["X-Requested-With"] = "ortus";
@@ -36,6 +52,11 @@ export async function call<T>(method: string, path: string, body?: unknown): Pro
   const response = await fetch(`/api/v1${path}`, { method, headers, body: payload });
   if (!response.ok) {
     const body = (await response.json().catch(() => undefined)) as ApiErrorBody | undefined;
+    // An action that needs a recent proof: confirm, then once more.
+    if (response.status === 403 && body?.error.code === "step_up" && stepUp && again) {
+      await stepUp();
+      return call<T>(method, path, payloadOf(payload), false);
+    }
     throw new ApiError(response.status, body?.error.code ?? "unknown", body?.error.message ?? response.statusText, body?.error.request_id ?? "");
   }
   return (await response.json()) as T;
