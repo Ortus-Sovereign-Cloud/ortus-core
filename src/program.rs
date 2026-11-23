@@ -316,22 +316,38 @@ async fn run_worker(instance: Arc<Instance>, stopping: Arc<AtomicBool>) {
     // program is process 1, so the pod name and the start time go in too.
     let host = std::env::var("HOSTNAME").unwrap_or_else(|_| "host".into());
     let name = format!("worker-{host}-{}-{}", std::process::id(), now_ms());
-    let worker = AppWorker::new(instance, &name);
-    let idle = Duration::from_millis(500);
-    let mut last_report = 0i64;
-    while !stopping.load(Ordering::SeqCst) {
-        match worker.tick(now_ms()).await {
-            Ok(true) => {}
-            Ok(false) => tokio::time::sleep(idle).await,
-            Err(e) => {
-                // Said at most once a minute, so a lost database is seen in
-                // the log without flooding it.
-                if now_ms() - last_report > 60_000 {
-                    eprintln!("ortus: worker: {e}");
-                    last_report = now_ms();
+    let worker = Arc::new(AppWorker::new(instance, &name));
+    // Several lanes (ORTUS_WORKER_LANES, default 4), so one slow job (a
+    // mail server that takes its time) holds up one lane, not the queue.
+    let lanes = std::env::var("ORTUS_WORKER_LANES")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|n| (1..=32).contains(n))
+        .unwrap_or(4);
+    let mut running = Vec::new();
+    for _ in 0..lanes {
+        let (worker, stopping) = (Arc::clone(&worker), Arc::clone(&stopping));
+        running.push(tokio::spawn(async move {
+            let idle = Duration::from_millis(500);
+            let mut last_report = 0i64;
+            while !stopping.load(Ordering::SeqCst) {
+                match worker.tick(now_ms()).await {
+                    Ok(true) => {}
+                    Ok(false) => tokio::time::sleep(idle).await,
+                    Err(e) => {
+                        // Said at most once a minute, so a lost database is
+                        // seen in the log without flooding it.
+                        if now_ms() - last_report > 60_000 {
+                            eprintln!("ortus: worker: {e}");
+                            last_report = now_ms();
+                        }
+                        tokio::time::sleep(idle).await;
+                    }
                 }
-                tokio::time::sleep(idle).await;
             }
-        }
+        }));
+    }
+    for lane in running {
+        let _ = lane.await;
     }
 }

@@ -85,6 +85,7 @@ pub fn core_jobs(instance: &Arc<Instance>) -> Vec<app::JobKind> {
         .collect();
     all.push(auth::signup::expiry_job(Arc::clone(instance)));
     all.push(retention::sweep_job(Arc::clone(instance)));
+    all.push(jobs::prune_job());
     all
 }
 
@@ -92,6 +93,7 @@ pub fn core_jobs(instance: &Arc<Instance>) -> Vec<app::JobKind> {
 pub const PERIODIC: &[(&str, i64)] = &[
     (auth::signup::EXPIRY_JOB, 60 * 60 * 1000),
     (retention::SWEEP_JOB, 24 * 60 * 60 * 1000),
+    (jobs::PRUNE_JOB, 24 * 60 * 60 * 1000),
     // Restore points: looks every ten minutes, takes one an hour.
     (points::JOB, 10 * 60 * 1000),
     // Outgoing webhooks: new events handed out and posted.

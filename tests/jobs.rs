@@ -28,6 +28,8 @@ on_both_engines!(
     many_workers_run_every_job_once,
     a_job_enqueued_in_a_rolled_back_transaction_does_not_exist,
     jobs_of_other_kinds_never_hide_a_workers_jobs,
+    a_slow_job_keeps_its_lease,
+    finished_jobs_are_forgotten,
 );
 
 fn job<'a>(id: &'a str, kind: &'a str) -> NewJob<'a> {
@@ -332,4 +334,84 @@ fn jobs_of_other_kinds_never_hide_a_workers_jobs(db: &Fresh) {
         Some(JobState::Queued),
         state(store.as_ref(), "other-00").unwrap()
     );
+}
+
+/// A job that outlasts its lease (an outside job: a slow mail server)
+/// renews it while it works: another worker does not take it meanwhile.
+fn a_slow_job_keeps_its_lease(db: &Fresh) {
+    let store = open(db);
+    assert!(enqueue(store.as_ref(), &job("slow", "slow"), 0).unwrap());
+    let slow = Worker::new("first").lease_ms(300).handle_outside(
+        "slow",
+        Box::new(|_job| {
+            Box::pin(async {
+                tokio::time::sleep(std::time::Duration::from_millis(1_200)).await;
+                Ok(())
+            })
+        }),
+    );
+    let other = Worker::new("second")
+        .lease_ms(300)
+        .handle_outside("slow", Box::new(|_job| Box::pin(async { Ok(()) })));
+    let started = std::time::Instant::now();
+    let s2 = Arc::clone(&store);
+    let first = std::thread::spawn(move || {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+        ortus_core::runtime::block_on(slow.tick(s2.as_ref(), now)).unwrap()
+    });
+    // Well past the first lease: the job is still held.
+    std::thread::sleep(std::time::Duration::from_millis(800));
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    assert!(
+        !ortus_core::runtime::block_on(other.tick(store.as_ref(), now)).unwrap(),
+        "taken twice"
+    );
+    assert!(first.join().unwrap());
+    assert!(started.elapsed().as_millis() >= 1_200);
+    assert_eq!(Some(JobState::Done), state(store.as_ref(), "slow").unwrap());
+}
+
+/// Done jobs go after a week, failed ones after a month; queued ones stay.
+fn finished_jobs_are_forgotten(db: &Fresh) {
+    let store = open(db);
+    let day = 24 * 60 * 60 * 1000i64;
+    // A real clock (times before 2020 are a test clock's and stay).
+    let now = 1_800_000_000_000i64;
+    for (id, st, finished) in [
+        ("old-done", "done", now - 8 * day),
+        ("new-done", "done", now - day),
+        ("old-failed", "failed", now - 31 * day),
+        ("new-failed", "failed", now - 8 * day),
+        ("waiting", "queued", 0),
+    ] {
+        assert!(enqueue(store.as_ref(), &job(id, "count"), 0).unwrap());
+        on(&*store)
+            .execute(
+                "UPDATE ortus_jobs SET state = $1, finished_at = $2 WHERE id = $3",
+                &[st.into(), finished.into(), id.into()],
+            )
+            .unwrap();
+    }
+    let gone = ortus_core::runtime::block_on(async {
+        let mut tx = store.begin().await.unwrap();
+        let n = ortus_core::jobs::prune_in(tx.as_mut(), now).await.unwrap();
+        tx.commit().await.unwrap();
+        n
+    });
+    assert_eq!(2, gone);
+    for (id, kept) in [
+        ("old-done", false),
+        ("new-done", true),
+        ("old-failed", false),
+        ("new-failed", true),
+        ("waiting", true),
+    ] {
+        assert_eq!(kept, state(store.as_ref(), id).unwrap().is_some(), "{id}");
+    }
 }

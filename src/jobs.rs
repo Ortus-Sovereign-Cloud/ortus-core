@@ -329,8 +329,30 @@ impl Worker {
         };
         if let Some(handler) = self.outside.get(&job.kind) {
             // The work first, holding no transaction; then a short one to
-            // mark it done (unless the lease was lost meanwhile).
-            let failure = match handler(&job).await {
+            // mark it done (unless the lease was lost meanwhile). While it
+            // works, its lease is renewed, so a slow job (a mail server that
+            // answers slowly, a restore point) is not taken by another
+            // worker and done twice.
+            let beat = async {
+                let every = std::time::Duration::from_millis((self.lease_ms / 3).max(1) as u64);
+                loop {
+                    tokio::time::sleep(every).await;
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |d| d.as_millis() as i64);
+                    let _ = store
+                        .execute(
+                            "UPDATE ortus_jobs SET locked_until = $1 WHERE id = $2 AND state = 'running' AND locked_by = $3 AND attempts = $4",
+                            &[(now + self.lease_ms).into(), job.id.as_str().into(), self.name.as_str().into(), job.attempt.into()],
+                        )
+                        .await;
+                }
+            };
+            let outcome = tokio::select! {
+                outcome = handler(&job) => outcome,
+                () = beat => unreachable!("the heartbeat never ends"),
+            };
+            let failure = match outcome {
                 Ok(()) => match start_completion(store, &job, &self.name, now_ms).await? {
                     Some(tx) => tx.commit().await.err().map(|e| e.to_string()),
                     None => None,
@@ -471,5 +493,53 @@ pub mod blocking {
     /// Blocking form of [`Worker::tick`].
     pub fn tick(worker: &Worker, store: &dyn AsyncStore, now_ms: i64) -> StoreResult<bool> {
         block_on(worker.tick(store, now_ms))
+    }
+}
+
+/// The daily job that forgets finished jobs: done ones after a week,
+/// failed ones after a month (kept that long to look into). The queue
+/// stays small, and so do restore points, which copy it.
+pub const PRUNE_JOB: &str = "core.prune-jobs";
+
+/// Done jobs are kept this long.
+pub const KEEP_DONE_MS: i64 = 7 * 24 * 60 * 60 * 1000;
+/// Failed jobs are kept this long.
+pub const KEEP_FAILED_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+
+/// Times before 2020 come only from a test's own clock: never pruned.
+const CLOCK_FLOOR_MS: i64 = 1_577_836_800_000;
+
+/// Forgets finished jobs older than they are kept; returns how many.
+pub async fn prune_in(tx: &mut dyn AsyncTx, now_ms: i64) -> StoreResult<u64> {
+    let done = tx
+        .execute(
+            "DELETE FROM ortus_jobs WHERE state = 'done' AND finished_at < $1 AND finished_at > $2",
+            &[(now_ms - KEEP_DONE_MS).into(), CLOCK_FLOOR_MS.into()],
+        )
+        .await?;
+    let failed = tx
+        .execute(
+            "DELETE FROM ortus_jobs WHERE state = 'failed' AND finished_at < $1 AND finished_at > $2",
+            &[(now_ms - KEEP_FAILED_MS).into(), CLOCK_FLOOR_MS.into()],
+        )
+        .await?;
+    Ok(done + failed)
+}
+
+/// The job behind [`PRUNE_JOB`].
+pub fn prune_job() -> crate::app::JobKind {
+    crate::app::JobKind {
+        kind: PRUNE_JOB.into(),
+        handler: Box::new(|_job, tx| {
+            Box::pin(async move {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_millis() as i64);
+                prune_in(tx, now)
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+            })
+        }),
     }
 }
