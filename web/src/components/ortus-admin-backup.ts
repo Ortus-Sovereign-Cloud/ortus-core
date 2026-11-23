@@ -334,6 +334,8 @@ export class OrtusAdminBackup extends LitElement {
 
   private readonly localize = new LocalizeController(this);
   @property({ attribute: false }) me: Me | undefined;
+  /** Which page: backup and restore, or the installation's integrations. */
+  @property() page: "backup" | "integrations" = "backup";
   @state() private summary: Summary | null = null;
   @state() private people: Person[] = [];
   /** "app/what" of the kind chosen. */
@@ -496,7 +498,7 @@ export class OrtusAdminBackup extends LitElement {
               "PN",
               t(this.localize, "integrations.push"),
               t(this.localize, "integrations.pushAbout"),
-              this.push.enabled ? on(t(this.localize, "integrations.pushPhones", { count: String(this.push.devices) })) : off(t(this.localize, "integrations.off")),
+              this.push.enabled ? on(t(this.localize, "integrations.pushPhones", { count: this.push.devices })) : off(t(this.localize, "integrations.off")),
               html`<span class="tools">
                 ${this.push.enabled && !this.push.own_apple_key
                   ? html`<span class="via">${t(this.localize, "integrations.pushVia", { gateway: new URL(this.push.gateway).host })}</span>`
@@ -699,8 +701,12 @@ export class OrtusAdminBackup extends LitElement {
   }
 
   override render() {
-    return html`<h1>${t(this.localize, "backup.title")}</h1>
-      <div class="grid">${this.restoreCard()}${this.integrationsCard()}</div>`;
+    if (this.page === "integrations") {
+      return html`<h1>${t(this.localize, "admin.integrations")}</h1>
+        <div class="grid">${this.integrationsCard()}</div>`;
+    }
+    return html`<h1>${t(this.localize, "admin.backup")}</h1>
+      <div class="grid">${this.restoreCard()}</div>`;
   }
 }
 

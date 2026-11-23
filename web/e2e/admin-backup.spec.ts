@@ -17,7 +17,7 @@ test.describe.configure({ mode: "serial" });
 test("a restore point is taken and self-restore turns on and off", async ({ page }) => {
   await page.goto("/admin/backup");
   const screen = page.locator("ortus-admin-backup");
-  await expect(screen.getByRole("heading", { level: 1 })).toHaveText(en["backup.title"]);
+  await expect(screen.getByRole("heading", { level: 1 })).toHaveText(en["admin.backup"]);
   const restore = screen.getByRole("region", { name: en["backup.restore"] });
   // The first point, taken on demand (the hourly one may be there already).
   const take = restore.getByRole("button", { name: en["backup.takeNow"] });
@@ -69,7 +69,7 @@ test("one person's folder comes back into a new folder", async ({ page }) => {
 });
 
 test("an owner adds a webhook, tests it and removes it", async ({ page }) => {
-  await page.goto("/admin/backup");
+  await page.goto("/admin/integrations");
   const card = page.locator("ortus-admin-backup").getByRole("region", { name: en["integrations.title"] });
   await expect(card.getByText(en["integrations.sms"])).toBeVisible();
   await expect(card.getByRole("link", { name: en["integrations.reference"] })).toHaveAttribute("href", "/api/v1/reference");
@@ -91,13 +91,13 @@ test("an owner adds a webhook, tests it and removes it", async ({ page }) => {
 });
 
 test("an administrator turns phone notifications on and off", async ({ page }) => {
-  await page.goto("/admin/backup");
+  await page.goto("/admin/integrations");
   const card = page.locator("ortus-admin-backup").getByRole("region", { name: en["integrations.title"] });
   const row = card.getByRole("listitem").filter({ hasText: en["integrations.push"] });
   await expect(row).toContainText(en["integrations.pushAbout"]);
   await expect(row).toContainText(en["integrations.off"]);
   await row.getByRole("button", { name: en["integrations.pushOn"] }).click();
-  await expect(row).toContainText(en["integrations.pushPhones"].replace("{count}", "0"));
+  await expect(row).toContainText("0 phones");
   // No Apple key on this installation: pushes go through the publisher's gateway.
   await expect(row).toContainText(en["integrations.pushVia"].replace("{gateway}", "ortus.cc"));
   await row.getByRole("button", { name: en["integrations.pushOff"] }).click();
@@ -110,10 +110,13 @@ for (const locale of LOCALES) {
     await page.addInitScript((code) => localStorage.setItem("ortus.locale", code), locale.code);
     await page.goto("/admin/backup");
     const screen = page.locator("ortus-admin-backup");
-    await expect(screen.getByRole("heading", { level: 1 })).toHaveText(catalog["backup.title"] as string);
+    await expect(screen.getByRole("heading", { level: 1 })).toHaveText(catalog["admin.backup"] as string);
     await expect(screen.getByRole("heading", { level: 2, name: catalog["backup.restore"] as string })).toBeVisible();
-    await expect(screen.getByRole("heading", { level: 2, name: catalog["integrations.title"] as string })).toBeVisible();
     await expect(page.getByRole("link", { name: catalog["admin.backup"] as string })).toHaveAttribute("aria-current", "page");
+    // Integrations have their own place in the console.
+    await page.getByRole("link", { name: catalog["admin.integrations"] as string }).click();
+    await expect(screen.getByRole("heading", { level: 2, name: catalog["integrations.title"] as string })).toBeVisible();
+    await expect(page.getByRole("link", { name: catalog["admin.integrations"] as string })).toHaveAttribute("aria-current", "page");
     await expect(page.locator("html")).toHaveAttribute("dir", locale.dir);
   });
 }

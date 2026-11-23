@@ -30,6 +30,7 @@ const SECTIONS: Section[] = [
   { path: "/admin/sign-in", label: "admin.signIn" },
   { path: "/admin/sovereignty", label: "admin.sovereignty" },
   { path: "/admin/backup", label: "admin.backup" },
+  { path: "/admin/integrations", label: "admin.integrations" },
 ];
 
 /** The admin console: its own navigation beside the section shown. */
@@ -149,6 +150,8 @@ export class OrtusAdmin extends LitElement {
         return html`<ortus-admin-signin .me=${this.me}></ortus-admin-signin>`;
       case "/admin/backup":
         return html`<ortus-admin-backup .me=${this.me}></ortus-admin-backup>`;
+      case "/admin/integrations":
+        return html`<ortus-admin-backup .me=${this.me} page="integrations"></ortus-admin-backup>`;
       case "/admin/sovereignty":
         return html`<ortus-admin-sovereignty .me=${this.me}></ortus-admin-sovereignty>`;
       default:
