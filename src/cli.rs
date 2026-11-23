@@ -187,6 +187,17 @@ pub async fn run(name: &str, version: &str, apps: Vec<Arc<dyn App>>, args: &[Str
             Ok(())
         })
         .await,
+        // Brings the database up to date and stops: a Kubernetes
+        // pre-upgrade job runs it before the new program's pods start.
+        ["migrate"] => with_config(|config| async move {
+            let store = config.open_store().await.map_err(|e| e.to_string())?;
+            crate::storage::install(store.as_ref(), schemas, crate::program::now_ms())
+                .await
+                .map_err(|e| e.to_string())?;
+            println!("ortus: the database is up to date");
+            Ok(())
+        })
+        .await,
         ["setup-link"] => with_config(|config| async move {
             let instance = crate::instance::Instance::open(config, apps, now_ms()).await?;
             match crate::auth::setup::prepare(&instance, instance.config.setup_token.as_ref().map(crate::config::Secret::as_str), true, now_ms())

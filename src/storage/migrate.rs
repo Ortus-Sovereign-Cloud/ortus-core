@@ -36,6 +36,19 @@ pub async fn install(store: &dyn AsyncStore, schemas: &[Schema], now_ms: i64) ->
     Ok(())
 }
 
+/// The SHA-256 of each applied migration's SQL.
+const SUMS_TABLE: &str = "CREATE TABLE IF NOT EXISTS ortus_migration_sums (
+    app TEXT NOT NULL,
+    version BIGINT NOT NULL,
+    checksum TEXT NOT NULL,
+    PRIMARY KEY (app, version)
+)";
+
+fn checksum(sql: &str) -> String {
+    use sha2::Digest;
+    hex::encode(sha2::Sha256::digest(sql.as_bytes()))
+}
+
 const HISTORY_TABLE: &str = "CREATE TABLE IF NOT EXISTS ortus_migrations (
     app TEXT NOT NULL,
     version BIGINT NOT NULL,
@@ -70,7 +83,39 @@ pub async fn migrate(
             .await?;
     }
     tx.execute(HISTORY_TABLE, &[]).await?;
+    tx.execute(SUMS_TABLE, &[]).await?;
     let done = history(&mut *tx, app).await?;
+    // What each applied migration was: a released migration must never
+    // change (a new one does the change). Said loudly, not refused, so an
+    // installation never stops over it.
+    let sums: std::collections::HashMap<i64, String> = tx
+        .query(
+            "SELECT version, checksum FROM ortus_migration_sums WHERE app = $1",
+            &[app.into()],
+        )
+        .await?
+        .iter()
+        .filter_map(|r| Some((r.int(0)?, r.text(1)?.to_string())))
+        .collect();
+    for (version, _) in &done {
+        let Some(known) = migrations.get(*version as usize - 1) else {
+            continue;
+        };
+        match sums.get(version) {
+            Some(sum) if *sum != checksum(known.sql) => eprintln!(
+                "ortus: migration {app} {version} ('{}') changed after it was applied; make the change in a new migration",
+                known.name
+            ),
+            Some(_) => {}
+            None => {
+                tx.execute(
+                    "INSERT INTO ortus_migration_sums (app, version, checksum) VALUES ($1, $2, $3)",
+                    &[app.into(), (*version).into(), checksum(known.sql).into()],
+                )
+                .await?;
+            }
+        }
+    }
     for (version, name) in &done {
         match migrations.get(*version as usize - 1) {
             Some(known) if known.name == name => {}
@@ -88,6 +133,15 @@ pub async fn migrate(
             }
             tx.execute(statement, &[]).await?;
         }
+        tx.execute(
+            "INSERT INTO ortus_migration_sums (app, version, checksum) VALUES ($1, $2, $3)",
+            &[
+                app.into(),
+                migration.version.into(),
+                checksum(migration.sql).into(),
+            ],
+        )
+        .await?;
         tx.execute(
             "INSERT INTO ortus_migrations (app, version, name, applied_at) VALUES ($1, $2, $3, $4)",
             &[

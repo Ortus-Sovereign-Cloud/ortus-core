@@ -30,6 +30,7 @@ on_both_engines!(
     programs_starting_together_migrate_once,
     more_transactions_than_connections_all_finish,
     a_commit_after_a_failed_statement_fails,
+    applied_migrations_keep_their_checksums,
 );
 
 const NOTES: Migration = Migration { version: 1, name: "notes", sql: "CREATE TABLE notes (id BIGINT PRIMARY KEY, title TEXT NOT NULL, body {{blob}}, pinned BIGINT)" };
@@ -277,4 +278,41 @@ fn a_commit_after_a_failed_statement_fails(db: &Fresh) {
         .filter_map(|r| r.int(0))
         .collect();
     assert_eq!(vec![1], ids);
+}
+
+/// Each applied migration's SQL is remembered by its SHA-256 (older
+/// databases get theirs on the next start); a migration changed after it
+/// was applied is only reported, never a reason not to start.
+fn applied_migrations_keep_their_checksums(db: &Fresh) {
+    let store = (db.open)();
+    assert_eq!(1, migrate(store.as_ref(), "sums", &[NOTES], 10).unwrap());
+    let sums = |store: &dyn AsyncStore| -> Vec<(i64, String)> {
+        on(store)
+            .query("SELECT version, checksum FROM ortus_migration_sums WHERE app = 'sums' ORDER BY version", &[])
+            .unwrap()
+            .iter()
+            .map(|r| (r.int(0).unwrap(), r.text(1).unwrap().to_string()))
+            .collect()
+    };
+    let first = sums(store.as_ref());
+    assert_eq!(1, first.len());
+    assert_eq!(64, first[0].1.len(), "a SHA-256 in hex");
+    // A database from before the sums: they are filled in.
+    on(&*store)
+        .execute("DELETE FROM ortus_migration_sums", &[])
+        .unwrap();
+    assert_eq!(0, migrate(store.as_ref(), "sums", &[NOTES], 20).unwrap());
+    assert_eq!(first, sums(store.as_ref()));
+    // Changed afterwards: reported, and the program still starts.
+    let changed = Migration {
+        version: 1,
+        name: "notes",
+        sql: "CREATE TABLE notes (id BIGINT PRIMARY KEY, title TEXT)",
+    };
+    assert_eq!(0, migrate(store.as_ref(), "sums", &[changed], 30).unwrap());
+    assert_eq!(
+        first,
+        sums(store.as_ref()),
+        "the applied migration's sum stays"
+    );
 }
