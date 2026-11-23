@@ -3627,6 +3627,42 @@
         ]
       }
     },
+    "/api/v1/metrics": {
+      "get": {
+        "operationId": "metrics",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "summary": "Numbers for monitoring, in Prometheus text format: jobs by kind and state, the oldest due job's wait, sessions, phones, the newest restore point's age. Only with ORTUS_METRICS_TOKEN as a bearer token.",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/notifications": {
       "get": {
         "description": "For anyone signed in.",

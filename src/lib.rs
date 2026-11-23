@@ -21,6 +21,7 @@ pub mod instance;
 pub mod interfaces;
 pub mod jobs;
 pub mod mail_out;
+pub mod metrics;
 pub mod notify;
 pub mod oidc;
 pub mod outbound;
