@@ -51,3 +51,48 @@ pub fn client() -> Result<reqwest::Client, String> {
         })
         .clone()
 }
+
+/// Where systems keep their certificate authorities.
+const SYSTEM_BUNDLES: &[&str] = &[
+    "/etc/ssl/certs/ca-certificates.crt",
+    "/etc/pki/tls/certs/ca-bundle.crt",
+    "/etc/ssl/cert.pem",
+    "/etc/ssl/ca-bundle.pem",
+];
+
+/// Libraries that read the system's certificate authorities (the DNS
+/// resolver of mail, the directory's LDAP) find none in the container
+/// image, which has no system: they get the program's own (the same
+/// public authorities, CDLA-Permissive-2.0), written once to a file
+/// that `SSL_CERT_FILE` names. A system with its own list, or a set
+/// `SSL_CERT_FILE`, is left alone.
+pub fn ensure_ca_bundle() {
+    if std::env::var_os("SSL_CERT_FILE").is_some()
+        || SYSTEM_BUNDLES
+            .iter()
+            .any(|p| std::path::Path::new(p).exists())
+    {
+        return;
+    }
+    let dir = std::env::var_os("ORTUS_DATA_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let file = dir.join(".ca-certificates.pem");
+    let mut pem = String::new();
+    for cert in webpki_root_certs::TLS_SERVER_ROOT_CERTS {
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(cert.as_ref());
+        pem.push_str("-----BEGIN CERTIFICATE-----\n");
+        for line in b64.as_bytes().chunks(64) {
+            pem.push_str(std::str::from_utf8(line).unwrap_or_default());
+            pem.push('\n');
+        }
+        pem.push_str("-----END CERTIFICATE-----\n");
+    }
+    let same = std::fs::read_to_string(&file).is_ok_and(|kept| kept == pem);
+    if same || std::fs::write(&file, &pem).is_ok() {
+        // Set before any other thread reads the environment (the start of
+        // the program).
+        std::env::set_var("SSL_CERT_FILE", &file);
+    }
+}

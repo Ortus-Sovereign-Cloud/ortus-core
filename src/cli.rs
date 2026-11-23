@@ -39,6 +39,7 @@ const HELP: &str =
                       write it to <dir>/<UTC time> and keep the newest N there (default 7)
   check-backup <dir>  check that a backup is whole and that this program can restore it
   restore <dir>       restore a backup into an empty database and file store
+  migrate             bring the database up to date and stop (a pre-upgrade job)
   setup-link          print a new link to create the first owner (until there is one)
   rotate-keys         seal every stored secret under a new key (older keys stay to open old backups)
   export-point <name> <dir>
@@ -51,6 +52,7 @@ Settings come from ORTUS_CONFIG (or ./ortus.toml) and ORTUS_* variables.";
 /// Runs the command in `args` (without the program name) for a program
 /// with these `apps`, and returns the exit status.
 pub async fn run(name: &str, version: &str, apps: Vec<Arc<dyn App>>, args: &[String]) -> i32 {
+    crate::http::ensure_ca_bundle();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let all_schemas = schemas(&apps);
     let schemas = all_schemas.as_slice();
