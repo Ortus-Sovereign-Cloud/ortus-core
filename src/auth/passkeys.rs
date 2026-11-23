@@ -64,14 +64,17 @@ async fn take_challenge(
     let rows = tx
         .query("SELECT user_id, purpose, expires_at FROM core_webauthn_challenges WHERE challenge = $1", &[challenge.into()])
         .await?;
-    tx.execute(
-        "DELETE FROM core_webauthn_challenges WHERE challenge = $1",
-        &[challenge.into()],
-    )
-    .await?;
+    // Taken by whoever deletes it: two answers at once cannot both use it.
+    let taken = tx
+        .execute(
+            "DELETE FROM core_webauthn_challenges WHERE challenge = $1",
+            &[challenge.into()],
+        )
+        .await?;
     tx.commit().await?;
     Ok(rows
         .first()
+        .filter(|_| taken == 1)
         .filter(|r| r.text(1) == Some(purpose) && r.int(2).unwrap_or_default() > now_ms())
         .map(|r| r.text(0).map(str::to_string)))
 }

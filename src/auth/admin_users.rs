@@ -671,7 +671,11 @@ async fn reset(
     let user = accounts::by_id(store, &id)
         .await?
         .ok_or_else(|| ApiError::not_found("There is no such person."))?;
-    if user.role > me.role {
+    // An administrator resets members; another administrator or an owner
+    // only an owner does (the reset hands its doer the new link).
+    if user.role > me.role
+        || (user.role >= Role::Admin && me.role < Role::Owner && user.id != me.id)
+    {
         return Err(ApiError::forbidden());
     }
     if user.role == Role::Owner && user.state == State::Active && owners(store).await? <= 1 {

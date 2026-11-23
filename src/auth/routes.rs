@@ -72,14 +72,22 @@ async fn take_ticket(
             &[hash.as_str().into()],
         )
         .await?;
+    // Taken by whoever deletes it: two at once cannot both use it.
+    let taken = tx
+        .execute(
+            "DELETE FROM core_signin_tickets WHERE token_hash = $1",
+            &[hash.as_str().into()],
+        )
+        .await?;
     tx.execute(
-        "DELETE FROM core_signin_tickets WHERE token_hash = $1 OR expires_at < $2",
-        &[hash.as_str().into(), now_ms().into()],
+        "DELETE FROM core_signin_tickets WHERE expires_at < $1",
+        &[now_ms().into()],
     )
     .await?;
     tx.commit().await?;
     Ok(rows
         .first()
+        .filter(|_| taken == 1)
         .filter(|r| r.int(2).unwrap_or_default() > now_ms())
         .map(|r| {
             (
