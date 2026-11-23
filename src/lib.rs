@@ -10,6 +10,7 @@ pub mod app_links;
 pub mod audit;
 pub mod auth;
 pub mod backup;
+pub mod changes;
 pub mod cli;
 pub mod config;
 pub mod dav;

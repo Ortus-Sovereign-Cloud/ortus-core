@@ -32,6 +32,8 @@ impl PostgresStore {
     /// with at most `max_connections` connections.
     pub async fn connect_async(url: &str, max_connections: usize) -> StoreResult<Self> {
         let first = open(url).await?;
+        // One more connection, listening for changes other programs make.
+        runtime::io().spawn(listen(url.to_string()));
         Ok(Self {
             pool: Arc::new(Pool {
                 url: url.to_string(),
@@ -44,6 +46,67 @@ impl PostgresStore {
     /// Blocking form of [`connect_async`](Self::connect_async).
     pub fn connect(url: &str, max_connections: usize) -> StoreResult<Self> {
         runtime::block_on(Self::connect_async(url, max_connections))
+    }
+}
+
+/// Listens on `ortus_changes` and wakes this program's waiters on each
+/// topic (see [`crate::changes`]); connects again after a loss.
+async fn listen(url: String) {
+    loop {
+        if let Err(e) = listen_once(&url).await {
+            eprintln!("ortus: listening for database changes: {e}");
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    }
+}
+
+async fn listen_once(url: &str) -> StoreResult<()> {
+    let settings = tls::Settings::from_url(url).map_err(StoreError::Database)?;
+    let config: tokio_postgres::Config = settings.url.parse().map_err(error)?;
+    if settings.mode == tls::Mode::Disable {
+        let (client, connection) = config.connect(NoTls).await.map_err(error)?;
+        let pump = runtime::io().spawn(pump(connection));
+        client
+            .batch_execute("LISTEN ortus_changes")
+            .await
+            .map_err(error)?;
+        let _ = pump.await;
+    } else {
+        let mut config = config;
+        config.ssl_mode(if settings.mode == tls::Mode::Prefer {
+            tokio_postgres::config::SslMode::Prefer
+        } else {
+            tokio_postgres::config::SslMode::Require
+        });
+        let connector = tokio_postgres_rustls::MakeRustlsConnect::new(
+            settings.client_config().map_err(StoreError::Database)?,
+        );
+        let (client, connection) = config.connect(connector).await.map_err(error)?;
+        let pump = runtime::io().spawn(pump(connection));
+        client
+            .batch_execute("LISTEN ortus_changes")
+            .await
+            .map_err(error)?;
+        let _ = pump.await;
+    }
+    Ok(())
+}
+
+/// Drives a listening connection and hands each notice to its waiters.
+async fn pump<S, T>(mut connection: tokio_postgres::Connection<S, T>)
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    loop {
+        let message = std::future::poll_fn(|cx| connection.poll_message(cx)).await;
+        match message {
+            Some(Ok(tokio_postgres::AsyncMessage::Notification(n))) => {
+                crate::changes::wake(n.payload())
+            }
+            Some(Ok(_)) => {}
+            Some(Err(_)) | None => return,
+        }
     }
 }
 
