@@ -23,6 +23,11 @@ pub struct SqliteStore {
     commands: Sender<Command>,
     /// Held by the open transaction; the next one waits for it.
     turn: Arc<Mutex<()>>,
+    /// A second connection, for reads only (a file database): write-ahead
+    /// logging lets it read one consistent snapshot while the writer works,
+    /// so pages and backups do not queue behind writes, nor writes behind
+    /// an hour's restore point.
+    reader: Option<(Sender<Command>, Arc<Mutex<()>>)>,
 }
 
 type Reply<T> = oneshot::Sender<StoreResult<T>>;
@@ -43,10 +48,20 @@ impl SqliteStore {
         connection
             .pragma_update(None, "journal_mode", "WAL")
             .map_err(error)?;
-        Self::start(connection)
+        let mut store = Self::start(connection)?;
+        let reading = Connection::open(path).map_err(error)?;
+        reading
+            .pragma_update(None, "query_only", "ON")
+            .map_err(error)?;
+        reading.busy_timeout(super::BUSY_LIMIT).map_err(error)?;
+        store.reader = Some((
+            thread(reading, "ortus-sqlite-read")?,
+            Arc::new(Mutex::new(())),
+        ));
+        Ok(store)
     }
 
-    /// Opens a database that lives in memory, for tests.
+    /// Opens a database that lives in memory, for tests (one connection).
     pub fn in_memory() -> StoreResult<Self> {
         Self::start(Connection::open_in_memory().map_err(error)?)
     }
@@ -56,22 +71,30 @@ impl SqliteStore {
             .pragma_update(None, "foreign_keys", "ON")
             .map_err(error)?;
         connection.busy_timeout(super::BUSY_LIMIT).map_err(error)?;
-        let (commands, inbox) = channel::<Command>();
-        std::thread::Builder::new()
-            .name("ortus-sqlite".into())
-            .spawn(move || {
-                // Ends when the store and every open transaction are gone.
-                while let Ok(command) = inbox.recv() {
-                    run(&connection, command);
-                }
-            })
-            .map_err(|e| StoreError::Database(format!("could not start the SQLite thread: {e}")))?;
         Ok(Self {
-            commands,
+            commands: thread(connection, "ortus-sqlite")?,
             turn: Arc::new(Mutex::new(())),
+            reader: None,
         })
     }
 }
+
+/// The thread a connection lives on; statements are sent to it.
+fn thread(connection: Connection, name: &str) -> StoreResult<Sender<Command>> {
+    let (commands, inbox) = channel::<Command>();
+    std::thread::Builder::new()
+        .name(name.into())
+        .spawn(move || {
+            // Ends when the store and every open transaction are gone.
+            while let Ok(command) = inbox.recv() {
+                run(&connection, command);
+            }
+        })
+        .map_err(|e| StoreError::Database(format!("could not start the SQLite thread: {e}")))?;
+    Ok(commands)
+}
+
+impl SqliteStore {}
 
 fn run(connection: &Connection, command: Command) {
     // A reply that nobody waits for any more is not an error.
@@ -159,7 +182,30 @@ impl AsyncStore for SqliteStore {
     }
 
     fn begin_read(&self) -> BoxFuture<'_, StoreResult<Box<dyn AsyncTransaction>>> {
-        Box::pin(self.start_transaction(Command::BeginRead))
+        Box::pin(async move {
+            match &self.reader {
+                Some((commands, turn)) => start_on(commands, turn, Command::BeginRead).await,
+                None => self.start_transaction(Command::BeginRead).await,
+            }
+        })
+    }
+
+    /// One query: on the reading connection when there is one, so a page
+    /// never waits for a writer.
+    fn query<'a>(
+        &'a self,
+        sql: &'a str,
+        params: &'a [Value],
+    ) -> BoxFuture<'a, StoreResult<Vec<Row>>> {
+        Box::pin(async move {
+            let mut tx = match &self.reader {
+                Some((commands, turn)) => start_on(commands, turn, Command::BeginRead).await?,
+                None => self.start_transaction(Command::Begin).await?,
+            };
+            let rows = tx.query(sql, params).await?;
+            tx.commit().await?;
+            Ok(rows)
+        })
     }
 }
 
@@ -168,22 +214,30 @@ impl SqliteStore {
         &self,
         begin: fn(Reply<()>) -> Command,
     ) -> StoreResult<Box<dyn AsyncTransaction>> {
-        // One transaction at a time on the connection. Waiting this long
-        // means a transaction waits on itself (code that starts a second
-        // transaction while holding one): fail instead of hanging forever.
-        let turn = tokio::time::timeout(super::BUSY_LIMIT, Arc::clone(&self.turn).lock_owned())
-            .await
-            .map_err(|_| StoreError::Database(super::BUSY_MESSAGE.into()))?;
-        let mut transaction = SqliteTransaction {
-            commands: self.commands.clone(),
-            open: false,
-            failed: false,
-            _turn: turn,
-        };
-        transaction.ask(begin).await?;
-        transaction.open = true;
-        Ok(Box::new(transaction) as Box<dyn AsyncTransaction>)
+        start_on(&self.commands, &self.turn, begin).await
     }
+}
+
+/// Starts a transaction on one connection: one at a time on it. Waiting
+/// this long means a transaction waits on itself (code that starts a
+/// second transaction while holding one): fail instead of hanging forever.
+async fn start_on(
+    commands: &Sender<Command>,
+    turn: &Arc<Mutex<()>>,
+    begin: fn(Reply<()>) -> Command,
+) -> StoreResult<Box<dyn AsyncTransaction>> {
+    let turn = tokio::time::timeout(super::BUSY_LIMIT, Arc::clone(turn).lock_owned())
+        .await
+        .map_err(|_| StoreError::Database(super::BUSY_MESSAGE.into()))?;
+    let mut transaction = SqliteTransaction {
+        commands: commands.clone(),
+        open: false,
+        failed: false,
+        _turn: turn,
+    };
+    transaction.ask(begin).await?;
+    transaction.open = true;
+    Ok(Box::new(transaction) as Box<dyn AsyncTransaction>)
 }
 
 struct SqliteTransaction {
