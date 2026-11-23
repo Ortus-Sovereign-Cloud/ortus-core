@@ -81,6 +81,11 @@ export class OrtusSearch extends LitElement {
       font-size: 18px;
       outline: none;
     }
+    /* The field's box shows the focus instead. */
+    .q:focus-within {
+      outline: 2px solid var(--ortus-accent, #8c9eff);
+      outline-offset: -2px;
+    }
     kbd {
       padding-block: 2px;
       padding-inline: 8px;
