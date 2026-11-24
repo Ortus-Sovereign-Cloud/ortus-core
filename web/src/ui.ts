@@ -70,6 +70,15 @@ export const controls = css`
     font: inherit;
     font-size: 15px;
   }
+  /* Boxes to tick keep their own shape: a size easy to tap, not a field's. */
+  input[type="checkbox"],
+  input[type="radio"] {
+    inline-size: 20px;
+    block-size: 20px;
+    flex: none;
+    padding: 0;
+    accent-color: var(--ortus-accent);
+  }
   .error {
     margin-block: 12px 0;
     padding: 10px 12px;

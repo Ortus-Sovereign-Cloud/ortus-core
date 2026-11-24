@@ -106,7 +106,8 @@ export class OrtusAdminUsers extends LitElement {
         margin-block: 24px 16px;
         flex-wrap: wrap;
       }
-      .filters input {
+      /* The filter box grows; the photo switch keeps its own size. */
+      .filters > input {
         flex: 1;
         min-inline-size: 200px;
       }
@@ -299,6 +300,14 @@ export class OrtusAdminUsers extends LitElement {
         .storage,
         .active {
           display: none;
+        }
+      }
+      /* A phone: the table scrolls sideways inside its card instead of
+         being cut off. */
+      @media (max-width: 720px) {
+        table {
+          display: block;
+          overflow-x: auto;
         }
       }
     `,

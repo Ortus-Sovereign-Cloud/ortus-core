@@ -307,3 +307,32 @@ test("each page has its own title, and a lost connection is said", async ({ page
   await context.setOffline(false);
   await expect(page.getByText(en["shell.disconnected"])).toBeHidden();
 });
+
+test("on a phone the rail is a bar along the bottom and every screen fits the width", async ({ page }) => {
+  await withApps(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/settings");
+  const nav = page.getByRole("navigation", { name: en["shell.apps"] });
+  const box = (await nav.boundingBox())!;
+  expect(box.width).toBeGreaterThan(380);
+  expect(box.y + box.height).toBeGreaterThan(830);
+  // The first apps, All apps, the bell and the account fit in it.
+  await expect(nav.getByRole("link", { name: "Mail" })).toBeVisible();
+  await expect(nav.getByRole("link", { name: en["shell.allApps"] })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "Admin" })).toBeHidden();
+  // Admin is in the account menu instead.
+  await nav.getByRole("button", { name: en["account.menu"] }).click();
+  await expect(page.getByRole("menuitem", { name: "Admin" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  for (const path of ["/", "/apps", "/settings", "/settings/security", "/admin", "/admin/users", "/admin/sign-in", "/admin/backup", "/admin/sovereignty"]) {
+    await page.goto(path);
+    await page.waitForTimeout(400);
+    const over = await page.evaluate(() => {
+      const main = document.querySelector("ortus-root")?.shadowRoot?.querySelector("ortus-shell")?.shadowRoot?.querySelector("main") ?? document.querySelector("main");
+      return { doc: document.documentElement.scrollWidth, main: main ? main.scrollWidth - main.clientWidth : 0 };
+    });
+    expect(over.doc, path).toBeLessThanOrEqual(390);
+    expect(over.main, path).toBeLessThanOrEqual(0);
+    await page.screenshot({ path: `test-results/phone${path.replace(/\//g, "_") || "_today"}.png` });
+  }
+});

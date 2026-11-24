@@ -81,6 +81,15 @@ export class OrtusNotifications extends LitElement {
       box-shadow: 0 24px 60px rgb(0 0 0 / 0.5);
       overflow: auto;
     }
+    /* A phone: the panel fills the width above the bottom bar. */
+    @media (max-width: 720px) {
+      #panel {
+        inset-block-start: 8px;
+        inset-inline: 8px;
+        inline-size: auto;
+        max-block-size: calc(var(--ortus-screen, 100dvh) - 16px);
+      }
+    }
     header {
       display: flex;
       align-items: center;

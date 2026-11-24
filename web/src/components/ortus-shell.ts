@@ -20,10 +20,14 @@ import "./ortus-step-up.js";
 
 /** How many apps the rail shows before "All apps". */
 const RAIL_APPS = 6;
+/** How many the bottom bar shows on a phone-sized screen. */
+const BAR_APPS = 4;
 
 /**
  * The frame every Ortus screen sits in: the app rail along the inline
- * start edge and the current screen beside it.
+ * start edge and the current screen beside it. Under 720 px wide (a
+ * phone) the rail is a bar along the bottom instead, and an app gets
+ * the height above it as --ortus-screen.
  */
 
 @customElement("ortus-shell")
@@ -40,8 +44,9 @@ export class OrtusShell extends LitElement {
         font-size: 14px;
       }
     :host {
+      --ortus-screen: 100dvh;
       display: flex;
-      block-size: 100vh;
+      block-size: 100dvh;
       background: var(--ortus-bg);
       color: var(--ortus-text);
     }
@@ -230,6 +235,15 @@ export class OrtusShell extends LitElement {
     [role="menuitem"]:focus-visible {
       background: var(--ortus-hover);
     }
+    /* Admin is in the rail; on a phone's bar there is no room for it. */
+    [role="menuitem"].narrow {
+      display: none;
+    }
+    @media (max-width: 720px) {
+      [role="menuitem"].narrow {
+        display: flex;
+      }
+    }
     [role="menuitem"].out {
       color: var(--ortus-red);
     }
@@ -261,6 +275,60 @@ export class OrtusShell extends LitElement {
       flex: 1;
       min-inline-size: 0;
       overflow: auto;
+    }
+    /* A phone: the rail becomes a bar along the bottom with the first
+       apps, All apps, the bell and the account; the rest is a tap away
+       under All apps, the language under My settings. */
+    @media (max-width: 720px) {
+      :host {
+        --ortus-bar: calc(60px + env(safe-area-inset-bottom, 0px));
+        --ortus-screen: calc(100dvh - var(--ortus-bar));
+        flex-direction: column;
+      }
+      main {
+        order: 1;
+      }
+      nav {
+        order: 2;
+        flex: 0 0 var(--ortus-bar);
+        flex-direction: row;
+        justify-content: space-around;
+        gap: 0;
+        padding-block: 4px env(safe-area-inset-bottom, 0px);
+        padding-inline: 4px;
+        border-inline-end: 0;
+        border-block-start: 1px solid var(--ortus-line);
+      }
+      .home,
+      .spacer,
+      .language,
+      .item.extra {
+        display: none;
+      }
+      .item {
+        flex: 1 1 0;
+        inline-size: auto;
+        min-inline-size: 44px;
+        max-inline-size: 72px;
+        padding-block: 4px;
+      }
+      .item span.label {
+        -webkit-line-clamp: 1;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      [popover] {
+        inset-inline: 8px;
+        inset-block-end: calc(var(--ortus-bar) + 8px);
+        max-inline-size: calc(100vw - 16px);
+        box-sizing: border-box;
+      }
+      #account {
+        inset-block-end: calc(var(--ortus-bar) + 8px);
+      }
+      .skip {
+        inset-inline-start: 8px;
+      }
     }
     .missing {
       max-inline-size: 520px;
@@ -380,8 +448,8 @@ export class OrtusShell extends LitElement {
             </g>
           </svg>
         </a>
-        ${(this.apps ?? []).slice(0, RAIL_APPS).map((app) => this.railItem(app))}
-        ${this.me && this.me.role !== "member" ? this.railItem({ id: "admin", group: "organisation", path: "/admin" }) : nothing}
+        ${(this.apps ?? []).slice(0, RAIL_APPS).map((app, i) => this.railItem(app, i >= BAR_APPS))}
+        ${this.me && this.me.role !== "member" ? this.railItem({ id: "admin", group: "organisation", path: "/admin" }, true) : nothing}
         <a class="item" href="/apps" aria-current=${location.pathname === "/apps" ? "page" : nothing} aria-label=${t(this.localize, "shell.allApps")}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <rect x="4" y="4" width="6" height="6" rx="1" />
@@ -414,6 +482,9 @@ export class OrtusShell extends LitElement {
                 </div>
                 <a role="menuitem" href="/settings" @click=${this.closeMenus}>${t(this.localize, "account.settings")}</a>
                 <a role="menuitem" href="/settings/security" @click=${this.closeMenus}>${t(this.localize, "account.security")}</a>
+                ${this.me.role !== "member"
+                  ? html`<a role="menuitem" class="narrow" href="/admin" @click=${this.closeMenus}>${t(this.localize, "admin.title")}</a>`
+                  : nothing}
                 <button
                   role="menuitem"
                   @click=${() => {
@@ -506,11 +577,14 @@ export class OrtusShell extends LitElement {
     `;
   }
 
-  private railItem(app: InstalledApp) {
+  /** An app in the rail; `extra` ones are left out of a phone's bar,
+   *  unless open now (the bar always shows where the person is). */
+  private railItem(app: InstalledApp, extra = false) {
     const icon = APP_ICONS[app.id];
     const name = appName(this.localize, app.id);
+    const here = this.current()?.id === app.id;
     return html`
-      <a class="item" href=${app.path} aria-current=${this.current()?.id === app.id ? "page" : nothing}>
+      <a class=${extra && !here ? "item extra" : "item"} href=${app.path} aria-current=${here ? "page" : nothing}>
         ${icon
           ? html`<span class="tile" data-app=${app.id} aria-hidden="true">
               ${svg`<svg width="17" height="17" viewBox="0 0 48 48">${unsafeSVG(icon.svg)}</svg>`}
