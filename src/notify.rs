@@ -286,6 +286,37 @@ async fn settings(request: &Request, instance: &Arc<Instance>) -> Result<Respons
 }
 
 /// Whether a phone should stay silent for this person now (do not
+/// A recent notification, as another app may show it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Recent {
+    pub title: String,
+    pub path: Option<String>,
+    pub at: i64,
+}
+
+/// Someone's newest notifications of `kind` since `since` (Unix ms).
+pub async fn recent(
+    store: &dyn AsyncStore,
+    user: &str,
+    kind: Kind,
+    since: i64,
+    limit: i64,
+) -> StoreResult<Vec<Recent>> {
+    Ok(store
+        .query(
+            "SELECT title, path, at FROM core_notifications WHERE user_id = $1 AND kind = $2 AND at > $3 ORDER BY at DESC LIMIT $4",
+            &[user.into(), kind.name().into(), since.into(), limit.into()],
+        )
+        .await?
+        .iter()
+        .map(|r| Recent {
+            title: r.text(0).unwrap_or_default().into(),
+            path: r.text(1).map(str::to_string),
+            at: r.int(2).unwrap_or(0),
+        })
+        .collect())
+}
+
 /// disturb, or within quiet hours at `minute_of_day` in their time).
 pub async fn quiet(store: &dyn AsyncStore, user: &str, minute_of_day: u32) -> StoreResult<bool> {
     let rows = store

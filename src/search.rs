@@ -165,6 +165,53 @@ pub async fn remove_in(
     Ok(())
 }
 
+/// Which of `ids` (an app's items) are not in the index yet.
+pub async fn missing(
+    store: &dyn AsyncStore,
+    app: &str,
+    ids: &[String],
+) -> StoreResult<Vec<String>> {
+    let mut gone = Vec::new();
+    for chunk in ids.chunks(200) {
+        let marks: Vec<String> = (0..chunk.len()).map(|i| format!("${}", i + 2)).collect();
+        let mut params: Vec<crate::storage::Value> = vec![app.into()];
+        params.extend(chunk.iter().map(|id| id.as_str().into()));
+        let found: std::collections::HashSet<String> = store
+            .query(
+                &format!(
+                    "SELECT id FROM core_search WHERE app = $1 AND id IN ({})",
+                    marks.join(", ")
+                ),
+                &params,
+            )
+            .await?
+            .iter()
+            .filter_map(|r| r.text(0).map(str::to_string))
+            .collect();
+        gone.extend(chunk.iter().filter(|id| !found.contains(*id)).cloned());
+    }
+    Ok(gone)
+}
+
+/// Moves items from one owner to another inside a transaction (a list or
+/// project changing hands): whoever may see the new owner finds them.
+pub async fn set_owner_in(
+    tx: &mut dyn crate::storage::AsyncTx,
+    app: &str,
+    from: &str,
+    to: &str,
+    ids: &[String],
+) -> StoreResult<()> {
+    for id in ids {
+        tx.execute(
+            "UPDATE core_search SET owner = $1 WHERE app = $2 AND owner = $3 AND id = $4",
+            &[to.into(), app.into(), from.into(), id.as_str().into()],
+        )
+        .await?;
+    }
+    Ok(())
+}
+
 /// Everything of an account's, for forgetting it.
 pub async fn forget(store: &dyn AsyncStore, owner: &str) -> StoreResult<()> {
     let ids: Vec<(String, String)> = store

@@ -26,6 +26,7 @@ pub mod metrics;
 pub mod notify;
 pub mod oidc;
 pub mod outbound;
+pub mod people;
 pub mod points;
 pub mod policy;
 pub mod program;
