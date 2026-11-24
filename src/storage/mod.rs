@@ -221,6 +221,25 @@ pub trait AsyncStore: Send + Sync {
     }
 }
 
+/// The placeholders and values for `IN (...)` over `items`, numbered from
+/// `$first`. The list is padded (with its last item) to a power of two,
+/// so a database that keeps statements prepared sees a few shapes, not
+/// one per length. An empty list matches nothing.
+pub fn any_of<T: Clone + Into<Value>>(first: usize, items: &[T]) -> (String, Vec<Value>) {
+    let mut values: Vec<Value> = items.iter().cloned().map(Into::into).collect();
+    if values.is_empty() {
+        return ("NULL".into(), values);
+    }
+    let size = values.len().next_power_of_two();
+    let last = values[values.len() - 1].clone();
+    values.resize(size, last);
+    let list = (first..first + size)
+        .map(|n| format!("${n}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    (list, values)
+}
+
 /// Rewrites shared-subset SQL for one engine: `{{blob}}` becomes the
 /// engine's binary type, and for SQLite `$n` becomes `?n`. Text inside
 /// single-quoted literals is left alone.
@@ -252,6 +271,17 @@ pub(crate) fn dialect(sql: &str, engine: Engine) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn any_of_pads_to_a_power_of_two() {
+        let (list, values) = any_of(2, &["a", "b", "c"]);
+        assert_eq!("$2, $3, $4, $5", list);
+        assert_eq!(
+            vec![Value::from("a"), "b".into(), "c".into(), "c".into()],
+            values
+        );
+        assert_eq!(("NULL".to_string(), vec![]), any_of::<&str>(1, &[]));
+    }
 
     #[test]
     fn sqlite_dialect_rewrites_parameters_outside_literals() {

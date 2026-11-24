@@ -74,6 +74,25 @@ pub async fn find(
     lifetime: Lifetime,
     now_ms: i64,
 ) -> StoreResult<Option<Session>> {
+    find_with(store, token, Some(lifetime), now_ms).await
+}
+
+/// As [`find`], with the lifetimes of the sign-in policy, read only when
+/// the session's expiry moves on (not on every request).
+pub async fn find_current(
+    store: &dyn AsyncStore,
+    token: &str,
+    now_ms: i64,
+) -> StoreResult<Option<Session>> {
+    find_with(store, token, None, now_ms).await
+}
+
+async fn find_with(
+    store: &dyn AsyncStore,
+    token: &str,
+    lifetime: Option<Lifetime>,
+    now_ms: i64,
+) -> StoreResult<Option<Session>> {
     let token_hash = hash(token);
     let rows = store
         .query(
@@ -101,6 +120,10 @@ pub async fn find(
     }
     let mut expires_at = expires_at;
     if now_ms - last_seen_at > 60_000 {
+        let lifetime = match lifetime {
+            Some(lifetime) => lifetime,
+            None => super::policy::lifetime(store).await,
+        };
         expires_at = (now_ms + lifetime.idle_ms).min(created_at + lifetime.max_ms);
         store
             .execute(
@@ -120,6 +143,7 @@ pub async fn find(
 
 /// Ends the session for `token` (signing out).
 pub async fn end(store: &dyn AsyncStore, token: &str) -> StoreResult<()> {
+    crate::request::forget_session();
     store
         .execute(
             "DELETE FROM core_sessions WHERE token_hash = $1",
@@ -132,6 +156,7 @@ pub async fn end(store: &dyn AsyncStore, token: &str) -> StoreResult<()> {
 /// Ends every session of an account, as after a suspension or a lost
 /// device.
 pub async fn end_all(store: &dyn AsyncStore, user_id: &str) -> StoreResult<u64> {
+    crate::request::forget_session();
     store
         .execute(
             "DELETE FROM core_sessions WHERE user_id = $1",

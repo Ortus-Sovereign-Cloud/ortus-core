@@ -188,15 +188,17 @@ pub async fn current(request: &Request, ortus: &Arc<Instance>) -> Option<Session
     if token.is_empty() || token.len() > 128 {
         return None;
     }
-    sessions::find(
-        ortus.store.as_ref(),
-        &token,
-        crate::auth::policy::lifetime(ortus.store.as_ref()).await,
-        crate::program::now_ms(),
-    )
-    .await
-    .ok()
-    .flatten()
+    // Asked again in the same request (the route's guard, then the
+    // handler): the answer it already had.
+    if let Some(found) = crate::request::session(&token) {
+        return found;
+    }
+    let found = sessions::find_current(ortus.store.as_ref(), &token, crate::program::now_ms())
+        .await
+        .ok()
+        .flatten();
+    crate::request::remember_session(&token, &found);
+    found
 }
 
 /// The person an app outside the browser signs in as, from the

@@ -282,6 +282,25 @@ pub async fn by_id(store: &dyn AsyncStore, id: &str) -> StoreResult<Option<User>
     rows.first().map(from_row).transpose()
 }
 
+/// The accounts with these ids, in one query a few hundred at a time;
+/// ids with no account are left out.
+pub async fn by_ids(store: &dyn AsyncStore, ids: &[String]) -> StoreResult<Vec<User>> {
+    let mut out = Vec::new();
+    for chunk in ids.chunks(256) {
+        let (list, values) = crate::storage::any_of(1, chunk);
+        for row in store
+            .query(
+                &format!("SELECT {COLUMNS} FROM core_users WHERE id IN ({list})"),
+                &values,
+            )
+            .await?
+        {
+            out.push(from_row(&row)?);
+        }
+    }
+    Ok(out)
+}
+
 pub async fn by_email(store: &dyn AsyncStore, email: &str) -> StoreResult<Option<User>> {
     let Some(email) = normal_email(email) else {
         return Ok(None);
@@ -324,6 +343,8 @@ pub async fn set(store: &dyn AsyncStore, id: &str, field: Field<'_>) -> StoreRes
         Field::ChooserSeen => ("chooser_seen", 1i64.into()),
         Field::ExpiresAt(at) => ("expires_at", at.into()),
     };
+    // A request that changes a person sees the change when it asks again.
+    crate::request::forget_session();
     store
         .execute(
             &format!("UPDATE core_users SET {column} = $1 WHERE id = $2"),

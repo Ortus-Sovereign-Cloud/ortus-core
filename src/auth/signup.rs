@@ -467,6 +467,7 @@ pub(crate) async fn erase_in(
     crate::search::forget_in(tx, ortus.store.engine(), id)
         .await
         .map_err(|e| e.to_string())?;
+    crate::request::forget_session();
     for sql in [
         "DELETE FROM core_sessions WHERE user_id = $1",
         "DELETE FROM core_credentials WHERE user_id = $1",

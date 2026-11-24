@@ -31,6 +31,9 @@ on_both_engines!(
     more_transactions_than_connections_all_finish,
     a_commit_after_a_failed_statement_fails,
     applied_migrations_keep_their_checksums,
+    a_changed_table_is_read_as_it_is_now,
+    in_lists_of_any_length,
+    a_transaction_that_does_nothing_ends_cleanly,
 );
 
 const NOTES: Migration = Migration { version: 1, name: "notes", sql: "CREATE TABLE notes (id BIGINT PRIMARY KEY, title TEXT NOT NULL, body {{blob}}, pinned BIGINT)" };
@@ -315,4 +318,86 @@ fn applied_migrations_keep_their_checksums(db: &Fresh) {
         sums(store.as_ref()),
         "the applied migration's sum stays"
     );
+}
+
+/// Statements are kept prepared; a table changed afterwards, here or by
+/// another program, is still read as it is now (another program's change
+/// may fail one statement on each connection, never more).
+fn a_changed_table_is_read_as_it_is_now(db: &Fresh) {
+    let (store, other) = ((db.open)(), (db.open)());
+    // PostgreSQL's prepared statements (SQLite keeps the width a cached
+    // `SELECT *` had; Ortus names its columns).
+    if store.engine() != Engine::Postgres {
+        return;
+    }
+    migrate(store.as_ref(), "test", &[NOTES], 1).unwrap();
+    on(&*store)
+        .execute("INSERT INTO notes (id, title) VALUES (1, 'a')", &[])
+        .unwrap();
+    let width = |store: &dyn AsyncStore| -> Result<usize, StoreError> {
+        Ok(on(store).query("SELECT * FROM notes", &[])?[0].0.len())
+    };
+    assert_eq!(4, width(store.as_ref()).unwrap());
+    on(&*store)
+        .execute("ALTER TABLE notes ADD COLUMN extra TEXT", &[])
+        .unwrap();
+    assert_eq!(5, width(store.as_ref()).unwrap());
+    on(&*other)
+        .execute("ALTER TABLE notes ADD COLUMN more TEXT", &[])
+        .unwrap();
+    let now = width(store.as_ref()).or_else(|_| width(store.as_ref()));
+    assert_eq!(6, now.unwrap());
+}
+
+fn in_lists_of_any_length(db: &Fresh) {
+    let store = (db.open)();
+    migrate(store.as_ref(), "test", &[NOTES], 1).unwrap();
+    for id in 0..10i64 {
+        on(&*store)
+            .execute(
+                "INSERT INTO notes (id, title) VALUES ($1, 'n')",
+                &[id.into()],
+            )
+            .unwrap();
+    }
+    for wanted in [
+        vec![],
+        vec![3i64],
+        vec![1, 2, 9],
+        (0..7).collect(),
+        (0..40).collect(),
+    ] {
+        let (list, mut values) = ortus_core::storage::any_of(2, &wanted);
+        values.insert(0, "n".into());
+        let ids: Vec<i64> = on(&*store)
+            .query(
+                &format!("SELECT id FROM notes WHERE title = $1 AND id IN ({list}) ORDER BY id"),
+                &values,
+            )
+            .unwrap()
+            .iter()
+            .filter_map(|r| r.int(0))
+            .collect();
+        let expected: Vec<i64> = wanted.iter().copied().filter(|id| *id < 10).collect();
+        assert_eq!(expected, ids);
+    }
+}
+
+fn a_transaction_that_does_nothing_ends_cleanly(db: &Fresh) {
+    let store = (db.open)();
+    migrate(store.as_ref(), "test", &[NOTES], 1).unwrap();
+    ortus_core::runtime::block_on(async {
+        store.begin().await.unwrap().commit().await.unwrap();
+        store.begin_read().await.unwrap().rollback().await.unwrap();
+        // Rolled back after its first statement: nothing kept.
+        let mut tx = store.begin().await.unwrap();
+        tx.execute("INSERT INTO notes (id, title) VALUES (5, 'x')", &[])
+            .await
+            .unwrap();
+        tx.rollback().await.unwrap();
+    });
+    assert!(on(&*store)
+        .query("SELECT id FROM notes", &[])
+        .unwrap()
+        .is_empty());
 }

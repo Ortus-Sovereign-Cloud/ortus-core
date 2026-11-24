@@ -776,35 +776,41 @@ pub fn register(
     for (owner, route) in all {
         let path = format!("{PREFIX}{}", route.path);
         let (handler, access) = (route.handler, route.access);
-        let guarded = move |request: Request,
-                            params: PathParams,
-                            connection: ConnectionInfo,
-                            shared: Arc<Arc<Instance>>| async move {
-            let ortus: Arc<Instance> = Arc::clone(&*shared);
-            match crate::auth::check(&request, &ortus, access).await {
-                Ok(_) => {}
-                Err(crate::auth::Refusal::SignIn) => return ApiError::sign_in().response(&request),
-                Err(crate::auth::Refusal::Forbidden) => {
-                    return ApiError::forbidden().response(&request)
-                }
-                Err(crate::auth::Refusal::NotFromClient) => {
-                    return ApiError {
-                        status: 403,
-                        code: "not_from_client",
-                        message:
-                            "Changes must come from the Ortus client (X-Requested-With: ortus)."
-                                .into(),
+        let guarded =
+            move |request: Request,
+                  params: PathParams,
+                  connection: ConnectionInfo,
+                  shared: Arc<Arc<Instance>>| {
+                let what = format!("{} {}", request.method, request.request_uri);
+                // One request: its session is looked up once, and its time
+                // in the database is counted (the slow log, ORTUS_SLOW_MS).
+                crate::request::serve(move || what, async move {
+                    let ortus: Arc<Instance> = Arc::clone(&*shared);
+                    match crate::auth::check(&request, &ortus, access).await {
+                        Ok(_) => {}
+                        Err(crate::auth::Refusal::SignIn) => {
+                            return ApiError::sign_in().response(&request)
+                        }
+                        Err(crate::auth::Refusal::Forbidden) => {
+                            return ApiError::forbidden().response(&request)
+                        }
+                        Err(crate::auth::Refusal::NotFromClient) => return ApiError {
+                            status: 403,
+                            code: "not_from_client",
+                            message:
+                                "Changes must come from the Ortus client (X-Requested-With: ortus)."
+                                    .into(),
+                        }
+                        .response(&request),
                     }
-                    .response(&request)
-                }
-            }
-            if let Some(id) = owner {
-                if !ortus.switches.is_on(id).await.unwrap_or(false) {
-                    return ApiError::not_installed(id).response(&request);
-                }
-            }
-            handler(request, params, connection, ortus).await
-        };
+                    if let Some(id) = owner {
+                        if !ortus.switches.is_on(id).await.unwrap_or(false) {
+                            return ApiError::not_installed(id).response(&request);
+                        }
+                    }
+                    handler(request, params, connection, ortus).await
+                })
+            };
         app = match route.method {
             Method::Get => app.get(&path, guarded),
             Method::Post => app.post(&path, guarded),

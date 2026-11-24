@@ -181,6 +181,7 @@ async fn end_session(
         .await
         .ok_or_else(ApiError::sign_in)?;
     let id = params.get("id").unwrap_or_default();
+    crate::request::forget_session();
     let ended = ortus
         .store
         .execute(
