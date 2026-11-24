@@ -776,14 +776,14 @@ pub fn register(
     for (owner, route) in all {
         let path = format!("{PREFIX}{}", route.path);
         let (handler, access) = (route.handler, route.access);
-        let guarded =
-            move |request: Request,
-                  params: PathParams,
-                  connection: ConnectionInfo,
-                  shared: Arc<Arc<Instance>>| {
-                let what = format!("{} {}", request.method, request.request_uri);
-                // One request: its session is looked up once, and its time
-                // in the database is counted (the slow log, ORTUS_SLOW_MS).
+        let guarded = move |request: Request,
+                            params: PathParams,
+                            connection: ConnectionInfo,
+                            shared: Arc<Arc<Instance>>| {
+            let what = format!("{} {}", request.method, request.request_uri);
+            // One request: its session is looked up once, and its time
+            // in the database is counted (the slow log, ORTUS_SLOW_MS).
+            let served =
                 crate::request::serve(move || what, async move {
                     let ortus: Arc<Instance> = Arc::clone(&*shared);
                     match crate::auth::check(&request, &ortus, access).await {
@@ -809,8 +809,18 @@ pub fn register(
                         }
                     }
                     handler(request, params, connection, ortus).await
-                })
-            };
+                });
+            async move {
+                let (mut response, cost) = served.await;
+                if let Some(timing) = cost.server_timing() {
+                    response.headers.push(rust_web_server::header::Header {
+                        name: "Server-Timing".into(),
+                        value: timing.into(),
+                    });
+                }
+                response
+            }
+        };
         app = match route.method {
             Method::Get => app.get(&path, guarded),
             Method::Post => app.post(&path, guarded),

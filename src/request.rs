@@ -36,8 +36,33 @@ fn slow_ms() -> Option<u128> {
     })
 }
 
+/// What a request cost in the database.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Cost {
+    pub statements: u32,
+    pub database: Duration,
+    pub waited: Duration,
+}
+
+impl Cost {
+    /// The `Server-Timing` header that says it, when `ORTUS_SERVER_TIMING`
+    /// is set (for measuring; off by default).
+    pub fn server_timing(&self) -> Option<String> {
+        static ON: OnceLock<bool> = OnceLock::new();
+        ON.get_or_init(|| std::env::var_os("ORTUS_SERVER_TIMING").is_some())
+            .then(|| {
+                format!(
+                    "db;dur={:.1};desc=\"{} statements\", wait;dur={:.1}",
+                    self.database.as_secs_f64() * 1000.0,
+                    self.statements,
+                    self.waited.as_secs_f64() * 1000.0
+                )
+            })
+    }
+}
+
 /// Serves `future` as one request: `what` names it in the slow log.
-pub async fn serve<F: Future>(what: impl FnOnce() -> String, future: F) -> F::Output {
+pub async fn serve<F: Future>(what: impl FnOnce() -> String, future: F) -> (F::Output, Cost) {
     let started = Instant::now();
     let (output, state) = REQUEST
         .scope(RefCell::new(State::default()), async move {
@@ -60,7 +85,12 @@ pub async fn serve<F: Future>(what: impl FnOnce() -> String, future: F) -> F::Ou
             );
         }
     }
-    output
+    let cost = Cost {
+        statements: state.statements,
+        database: state.database,
+        waited: state.waited,
+    };
+    (output, cost)
 }
 
 /// The session this request already found for `token`.
@@ -113,7 +143,7 @@ mod tests {
     #[tokio::test]
     async fn counts_belong_to_their_request() {
         statement(Duration::from_millis(5));
-        let ((), ()) = tokio::join!(
+        let (((), a), ((), b)) = tokio::join!(
             serve(String::new, async {
                 statement(Duration::from_millis(1));
                 statement(Duration::from_millis(1));
@@ -124,6 +154,7 @@ mod tests {
                 assert_eq!(1, REQUEST.with(|s| s.borrow().statements));
             })
         );
+        assert_eq!((2, 1), (a.statements, b.statements));
         assert!(session("t").is_none());
     }
 }

@@ -267,9 +267,11 @@ impl AsyncTx for SqliteTransaction {
     ) -> BoxFuture<'a, StoreResult<u64>> {
         Box::pin(async move {
             let sql = dialect(sql, Engine::Sqlite);
+            let started = std::time::Instant::now();
             let result = self
                 .ask(|reply| Command::Execute(sql, params.to_vec(), reply))
                 .await;
+            crate::request::statement(started.elapsed());
             self.failed |= result.is_err();
             result
         })
@@ -282,9 +284,11 @@ impl AsyncTx for SqliteTransaction {
     ) -> BoxFuture<'a, StoreResult<Vec<Row>>> {
         Box::pin(async move {
             let sql = dialect(sql, Engine::Sqlite);
+            let started = std::time::Instant::now();
             let result = self
                 .ask(|reply| Command::Query(sql, params.to_vec(), reply))
                 .await;
+            crate::request::statement(started.elapsed());
             self.failed |= result.is_err();
             result
         })
