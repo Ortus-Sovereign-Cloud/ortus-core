@@ -3,11 +3,13 @@ import { LOCALES } from "../src/i18n.js";
 import ar from "../src/locales/ar.js";
 import de from "../src/locales/de.js";
 import en from "../src/locales/en.js";
+import es from "../src/locales/es.js";
 import fr from "../src/locales/fr.js";
+import it from "../src/locales/it.js";
 import pl from "../src/locales/pl.js";
 import uk from "../src/locales/uk.js";
 
-const CATALOGS = { en, pl, uk, de, fr, ar } as const;
+const CATALOGS = { en, pl, uk, de, fr, es, it, ar } as const;
 type Code = keyof typeof CATALOGS;
 
 /** The apps of version 1, as the server will list them once they exist. */
@@ -172,7 +174,7 @@ test("a right-to-left language mirrors the layout", async ({ page }) => {
 });
 
 test.describe("first visit", () => {
-  for (const [browser, expected] of [["uk-UA", "uk"], ["ar-EG", "ar"], ["de-AT", "de"], ["fr-CA", "fr"], ["pl", "pl"], ["ja-JP", "en"]] as const) {
+  for (const [browser, expected] of [["uk-UA", "uk"], ["ar-EG", "ar"], ["de-AT", "de"], ["fr-CA", "fr"], ["es-MX", "es"], ["it-IT", "it"], ["pl", "pl"], ["ja-JP", "en"]] as const) {
     test.describe(`with a browser set to ${browser}`, () => {
       test.use({ locale: browser });
       test(`starts in ${expected}`, async ({ page }) => {
@@ -240,7 +242,7 @@ test.describe("an address that belongs to no installed app", () => {
 // texts follow the page's language.
 const TASKS_APP = `
 import { LitElement, html, LocalizeController, appText, registerAppMessages, controls } from "/assets/kit.js";
-const texts = { en: { title: "My tasks" }, pl: { title: "Moje zadania" }, uk: { title: "Мої завдання" }, de: { title: "Meine Aufgaben" }, fr: { title: "Mes tâches" }, ar: { title: "مهامي" } };
+const texts = { en: { title: "My tasks" }, pl: { title: "Moje zadania" }, uk: { title: "Мої завдання" }, de: { title: "Meine Aufgaben" }, fr: { title: "Mes tâches" }, es: { title: "Mis tareas" }, it: { title: "Le mie attività" }, ar: { title: "مهامي" } };
 await registerAppMessages("tasks", texts.en, async (code) => texts[code] ?? {});
 class TasksApp extends LitElement {
   static styles = [controls];

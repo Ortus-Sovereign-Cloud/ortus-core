@@ -1,15 +1,17 @@
 // Search and commands (board WebSearch): Ctrl K opens it from anywhere in
-// the shell, in six languages; the keyboard and Escape work; a search
+// the shell, in every language; the keyboard and Escape work; a search
 // with nothing indexed says so and still offers its commands.
 import { expect, test } from "@playwright/test";
 import ar from "../src/locales/ar.js";
 import de from "../src/locales/de.js";
 import en from "../src/locales/en.js";
+import es from "../src/locales/es.js";
 import fr from "../src/locales/fr.js";
+import it from "../src/locales/it.js";
 import pl from "../src/locales/pl.js";
 import uk from "../src/locales/uk.js";
 
-for (const [code, texts] of [["en", en], ["pl", pl], ["uk", uk], ["de", de], ["fr", fr], ["ar", ar]] as const) {
+for (const [code, texts] of [["en", en], ["pl", pl], ["uk", uk], ["de", de], ["fr", fr], ["es", es], ["it", it], ["ar", ar]] as const) {
   test(`Ctrl K opens the search in ${code}`, async ({ page }) => {
     await page.addInitScript((c) => localStorage.setItem("ortus.locale", c), code);
     await page.goto("/settings");

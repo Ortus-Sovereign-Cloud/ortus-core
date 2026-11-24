@@ -33,7 +33,7 @@ pub const SCHEMA: Schema = Schema {
 /// The text sizes offered, in percent.
 const TEXT_SIZES: [i64; 4] = [100, 110, 125, 150];
 /// The languages the interface has.
-const LANGUAGES: [&str; 6] = ["en", "pl", "uk", "de", "fr", "ar"];
+const LANGUAGES: [&str; 8] = ["en", "pl", "uk", "de", "fr", "es", "it", "ar"];
 
 async fn preferences(store: &dyn AsyncStore, user_id: &str) -> StoreResult<Map<String, Value>> {
     let rows = store

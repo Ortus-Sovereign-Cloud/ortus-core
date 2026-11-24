@@ -28,6 +28,9 @@ export const LOCALES: readonly Locale[] = [
   { code: "uk", name: "Українська", dir: "ltr", load: async () => [(await import("./locales/uk.js")).default, (await import("@lit-material/translations/uk.js")).default] },
   { code: "de", name: "Deutsch", dir: "ltr", load: async () => [(await import("./locales/de.js")).default, (await import("@lit-material/translations/de.js")).default] },
   { code: "fr", name: "Français", dir: "ltr", load: async () => [(await import("./locales/fr.js")).default, (await import("@lit-material/translations/fr.js")).default] },
+  { code: "es", name: "Español", dir: "ltr", load: async () => [(await import("./locales/es.js")).default, (await import("@lit-material/translations/es.js")).default] },
+  // lit-material has no Italian; Ortus carries its own catalog for the components.
+  { code: "it", name: "Italiano", dir: "ltr", load: async () => [(await import("./locales/it.js")).default, (await import("./locales/lit-it.js")).default] },
   { code: "ar", name: "العربية", dir: "rtl", load: async () => [(await import("./locales/ar.js")).default, (await import("@lit-material/translations/ar.js")).default] },
 ];
 

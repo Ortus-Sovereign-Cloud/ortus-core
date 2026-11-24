@@ -4,11 +4,13 @@ import { LOCALES } from "../src/i18n.js";
 import ar from "../src/locales/ar.js";
 import de from "../src/locales/de.js";
 import en from "../src/locales/en.js";
+import es from "../src/locales/es.js";
 import fr from "../src/locales/fr.js";
+import it from "../src/locales/it.js";
 import pl from "../src/locales/pl.js";
 import uk from "../src/locales/uk.js";
 
-const CATALOGS = { en, pl, uk, de, fr, ar } as const;
+const CATALOGS = { en, pl, uk, de, fr, es, it, ar } as const;
 type Code = keyof typeof CATALOGS;
 
 test("the owner changes how long sessions last", async ({ page }) => {

@@ -19,13 +19,17 @@ function placeholders(message: Message): string[] {
 }
 
 describe("languages", () => {
-  it("offers English, Polish, Ukrainian, German, French and Arabic", () => {
-    expect(LOCALES.map((locale) => locale.code)).toEqual(["en", "pl", "uk", "de", "fr", "ar"]);
+  it("offers English, Polish, Ukrainian, German, French, Spanish, Italian and Arabic", () => {
+    expect(LOCALES.map((locale) => locale.code)).toEqual(["en", "pl", "uk", "de", "fr", "es", "it", "ar"]);
     expect(LOCALES.filter((locale) => locale.dir === "rtl").map((locale) => locale.code)).toEqual(["ar"]);
   });
 
   it("has a catalog file for every language and no stray ones", () => {
-    const files = readdirSync(join(src, "locales")).map((file) => file.replace(/\.ts$/, "")).sort();
+    // Only language catalogs: lit-<code>.ts (component text a package lacks) and REVIEW.md sit beside them.
+    const files = readdirSync(join(src, "locales"))
+      .filter((file) => /^[a-z]{2}\.ts$/.test(file))
+      .map((file) => file.replace(/\.ts$/, ""))
+      .sort();
     expect(files).toEqual(LOCALES.map((locale) => locale.code).sort());
   });
 
@@ -38,6 +42,16 @@ describe("languages", () => {
         const texts = typeof message === "string" ? [message] : Object.values(message);
         for (const text of texts) expect(text.trim(), `${code} ${key}`).not.toBe("");
       }
+    }
+  });
+
+  it("has every component message in the Italian component catalog Ortus carries", async () => {
+    const english = (await import("@lit-material/translations/en.js")).default as Record<string, Message>;
+    const italian = (await import("../src/locales/lit-it.js")).default as Record<string, Message>;
+    expect(Object.keys(italian).sort()).toEqual(Object.keys(english).sort());
+    for (const [key, message] of Object.entries(english)) {
+      if (key.startsWith("$")) continue;
+      expect(placeholders(italian[key]!).every((name) => placeholders(message).includes(name)), key).toBe(true);
     }
   });
 
@@ -73,6 +87,8 @@ describe("languages", () => {
       uk: [[1, "1 застосунок"], [3, "3 застосунки"], [5, "5 застосунків"], [21, "21 застосунок"], [11, "11 застосунків"]],
       de: [[1, "1 App"], [7, "7 Apps"]],
       fr: [[0, "0 application"], [1, "1 application"], [2, "2 applications"]],
+      es: [[0, "0 aplicaciones"], [1, "1 aplicación"], [2, "2 aplicaciones"]],
+      it: [[0, "0 app"], [1, "1 app"], [2, "2 app"]],
       ar: [[0, "لا تطبيقات"], [1, "تطبيق واحد"], [2, "تطبيقان"], [3, "3 تطبيقات"], [11, "11 تطبيقًا"], [100, "100 تطبيق"]],
     };
     for (const [code, catalog] of await catalogs()) {
