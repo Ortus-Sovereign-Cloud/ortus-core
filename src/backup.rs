@@ -282,27 +282,143 @@ pub(crate) async fn table_names(
     Ok(names)
 }
 
-/// One table as JSON lines: its columns, the text, and how many rows.
-pub(crate) async fn table_text(
-    tx: &mut dyn AsyncTx,
+/// Rows read at a time when dumping a table: memory stays flat however
+/// big the table is.
+const PAGE: usize = 500;
+/// Bytes read at a time when copying a file into a backup.
+pub(crate) const CHUNK: u64 = 8 * 1024 * 1024;
+
+/// One table read page by page as JSON lines, from the snapshot of the
+/// transaction it is read in: PostgreSQL through a cursor, SQLite by
+/// rowid. The text and its checksum come out a page at a time.
+pub(crate) struct TableDump {
+    name: String,
+    pub columns: Vec<String>,
     engine: Engine,
-    name: &str,
-) -> Result<(Vec<String>, String, u64), BackupError> {
-    plain_name(name)?;
-    let columns = columns(tx, engine, name).await?;
-    for column in &columns {
-        plain_name(column)?;
+    /// SQLite: the last rowid read.
+    after: i64,
+    /// SQLite: a table without rowids is read whole (none of Ortus's are).
+    whole: bool,
+    done: bool,
+    pub rows: u64,
+    hasher: Sha256,
+}
+
+impl TableDump {
+    pub(crate) async fn start(
+        tx: &mut dyn AsyncTx,
+        engine: Engine,
+        name: &str,
+    ) -> Result<Self, BackupError> {
+        plain_name(name)?;
+        let columns = columns(tx, engine, name).await?;
+        for column in &columns {
+            plain_name(column)?;
+        }
+        if engine == Engine::Postgres {
+            tx.execute(
+                &format!(
+                    "DECLARE ortus_dump NO SCROLL CURSOR FOR SELECT {} FROM {name}",
+                    columns.join(", ")
+                ),
+                &[],
+            )
+            .await?;
+        }
+        Ok(Self {
+            name: name.to_string(),
+            columns,
+            engine,
+            after: i64::MIN,
+            whole: false,
+            done: false,
+            rows: 0,
+            hasher: Sha256::new(),
+        })
     }
-    let rows = tx
-        .query(&format!("SELECT {} FROM {name}", columns.join(", ")), &[])
-        .await?;
-    let mut text = String::new();
-    for row in &rows {
-        let line: Vec<Json> = row.0.iter().map(to_json).collect();
-        text.push_str(&Json::from(line).to_string());
-        text.push('\n');
+
+    /// The next page of lines, or `None` when the table is all read.
+    pub(crate) async fn next(
+        &mut self,
+        tx: &mut dyn AsyncTx,
+    ) -> Result<Option<String>, BackupError> {
+        if self.done {
+            return Ok(None);
+        }
+        let (name, list) = (&self.name, self.columns.join(", "));
+        let (rows, skip) = match self.engine {
+            Engine::Postgres => (tx.query(&format!("FETCH {PAGE} FROM ortus_dump"), &[]).await?, 0),
+            Engine::Sqlite if self.whole => (tx.query(&format!("SELECT {list} FROM {name}"), &[]).await?, 0),
+            Engine::Sqlite => {
+                match tx
+                    .query(
+                        &format!("SELECT rowid, {list} FROM {name} WHERE rowid > $1 ORDER BY rowid LIMIT {PAGE}"),
+                        &[self.after.into()],
+                    )
+                    .await
+                {
+                    Ok(rows) => (rows, 1),
+                    Err(_) if self.rows == 0 => {
+                        self.whole = true;
+                        (tx.query(&format!("SELECT {list} FROM {name}"), &[]).await?, 0)
+                    }
+                    Err(e) => return Err(e.into()),
+                }
+            }
+        };
+        if self.whole || rows.len() < PAGE {
+            self.done = true;
+            if self.engine == Engine::Postgres {
+                tx.execute("CLOSE ortus_dump", &[]).await?;
+            }
+        }
+        let mut text = String::new();
+        for row in &rows {
+            if skip == 1 {
+                self.after = row.int(0).unwrap_or(self.after);
+            }
+            let line: Vec<Json> = row.0[skip..].iter().map(to_json).collect();
+            text.push_str(&Json::from(line).to_string());
+            text.push('\n');
+        }
+        self.rows += rows.len() as u64;
+        self.hasher.update(text.as_bytes());
+        Ok(if text.is_empty() && self.done {
+            None
+        } else {
+            Some(text)
+        })
     }
-    Ok((columns, text, rows.len() as u64))
+
+    /// The table's entry in the manifest, once every page is read.
+    pub(crate) fn entry(self) -> TableEntry {
+        TableEntry {
+            name: self.name,
+            columns: self.columns,
+            rows: self.rows,
+            sha256: hex::encode(self.hasher.finalize()),
+        }
+    }
+}
+
+/// A file's size and SHA-256, read a chunk at a time; `None` when it is
+/// gone.
+pub(crate) async fn file_sum(
+    files: &Files,
+    key: &str,
+) -> Result<Option<(u64, String)>, BackupError> {
+    let mut hasher = Sha256::new();
+    let mut at = 0u64;
+    loop {
+        let Some(part) = files.read_range(key, at, CHUNK).await? else {
+            return Ok(None);
+        };
+        hasher.update(&part);
+        at += part.len() as u64;
+        if (part.len() as u64) < CHUNK {
+            return Ok(Some((at, hex::encode(hasher.finalize()))));
+        }
+    }
 }
 
 /// Writes a backup of `store` and `files` into `dir`, which must not exist
@@ -327,15 +443,14 @@ pub async fn backup(
     let names = table_names(&mut *tx, engine).await?;
     let mut entries = Vec::new();
     for name in &names {
-        let (columns, text, rows) = table_text(&mut *tx, engine, name).await?;
         let path = tables_dir.join(format!("{name}.jsonl"));
-        std::fs::write(&path, &text).map_err(io(&path))?;
-        entries.push(TableEntry {
-            name: name.clone(),
-            columns,
-            rows,
-            sha256: sha256(text.as_bytes()),
-        });
+        let mut out = std::io::BufWriter::new(std::fs::File::create(&path).map_err(io(&path))?);
+        let mut dump = TableDump::start(&mut *tx, engine, name).await?;
+        while let Some(page) = dump.next(&mut *tx).await? {
+            out.write_all(page.as_bytes()).map_err(io(&path))?;
+        }
+        out.flush().map_err(io(&path))?;
+        entries.push(dump.entry());
     }
     let history = tx
         .query(
@@ -353,24 +468,42 @@ pub async fn backup(
     let (mut count, mut bytes) = (0u64, 0u64);
     let mut skipped = Vec::new();
     for key in files.list("").await? {
-        let Some(contents) = files.get(&key).await? else {
-            skipped.push(key);
-            continue;
-        };
         let path = dir.join("files").join(&key);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(io(parent))?;
         }
-        std::fs::write(&path, &contents).map_err(io(&path))?;
+        // A chunk at a time: a big file never sits in memory whole.
+        let (mut out, mut hasher, mut size) = (None, Sha256::new(), 0u64);
+        let gone = loop {
+            let Some(part) = files.read_range(&key, size, CHUNK).await? else {
+                break true;
+            };
+            let file = match &mut out {
+                Some(file) => file,
+                None => out.insert(std::fs::File::create(&path).map_err(io(&path))?),
+            };
+            file.write_all(&part).map_err(io(&path))?;
+            hasher.update(&part);
+            size += part.len() as u64;
+            if (part.len() as u64) < CHUNK {
+                break false;
+            }
+        };
+        if gone {
+            drop(out);
+            let _ = std::fs::remove_file(&path);
+            skipped.push(key);
+            continue;
+        }
         let line = FileLine {
             key,
-            size: contents.len() as u64,
-            sha256: sha256(&contents),
+            size,
+            sha256: hex::encode(hasher.finalize()),
         };
         listing.push_str(&serde_json::to_string(&line).map_err(|e| BackupError(e.to_string()))?);
         listing.push('\n');
         count += 1;
-        bytes += contents.len() as u64;
+        bytes += size;
     }
     let listing_path = dir.join("files.jsonl");
     std::fs::write(&listing_path, &listing).map_err(io(&listing_path))?;

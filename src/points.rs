@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as Json};
 use sha2::{Digest, Sha256};
 
-use crate::backup::{BackupError, FilesEntry, Manifest, TableEntry, FORMAT, FORMAT_VERSION};
+use crate::backup::{BackupError, FilesEntry, Manifest, FORMAT, FORMAT_VERSION};
 use crate::files::{Files, S3Settings};
 use crate::instance::Instance;
 use crate::storage::{AsyncStore, Migration, Schema};
@@ -98,6 +98,37 @@ pub fn destination(data_dir: &Path) -> Result<Files, String> {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| data_dir.join("backups"));
     Files::local(&dir).map_err(|e| e.to_string())
+}
+
+/// Copies the file under `key` into `blob` a chunk at a time, if it still
+/// has the checksum `sum`; a copy that turns out different is not kept.
+async fn copy_blob(
+    files: &Files,
+    key: &str,
+    dest: &Files,
+    blob: &str,
+    sum: &str,
+) -> Result<bool, BackupError> {
+    let mut out = dest.writer(blob).await?;
+    let (mut hasher, mut at) = (Sha256::new(), 0u64);
+    loop {
+        let Some(part) = files.read_range(key, at, crate::backup::CHUNK).await? else {
+            out.abort().await?;
+            return Ok(false);
+        };
+        hasher.update(&part);
+        out.write(&part).await?;
+        at += part.len() as u64;
+        if (part.len() as u64) < crate::backup::CHUNK {
+            break;
+        }
+    }
+    if hex::encode(hasher.finalize()) != sum {
+        out.abort().await?;
+        return Ok(false);
+    }
+    out.close().await?;
+    Ok(true)
 }
 
 fn sha256(bytes: &[u8]) -> String {
@@ -233,15 +264,14 @@ pub async fn take(
     let names = crate::backup::table_names(&mut *tx, engine).await?;
     let mut entries = Vec::new();
     for table in &names {
-        let (columns, text, rows) = crate::backup::table_text(&mut *tx, engine, table).await?;
-        dest.put(&format!("{base}/tables/{table}.jsonl"), text.as_bytes())
-            .await?;
-        entries.push(TableEntry {
-            name: table.clone(),
-            columns,
-            rows,
-            sha256: sha256(text.as_bytes()),
-        });
+        // A page at a time: a big table never sits in memory whole.
+        let mut out = dest.writer(&format!("{base}/tables/{table}.jsonl")).await?;
+        let mut dump = crate::backup::TableDump::start(&mut *tx, engine, table).await?;
+        while let Some(page) = dump.next(&mut *tx).await? {
+            out.write(page.as_bytes()).await?;
+        }
+        out.close().await?;
+        entries.push(dump.entry());
     }
     let history = tx
         .query(
@@ -274,16 +304,21 @@ pub async fn take(
         let (size, sum) = match known.get(&key).filter(|_| !full) {
             Some((size, sum)) => (*size, sum.clone()),
             None => {
-                let Some(contents) = instance.files.get(&key).await? else {
+                // Summed, then copied, a chunk at a time: a big file never
+                // sits in memory whole, and one already kept is not copied.
+                let Some((size, sum)) = crate::backup::file_sum(&instance.files, &key).await?
+                else {
                     skipped.push(key);
                     continue;
                 };
-                let sum = sha256(&contents);
                 let blob = format!("blobs/{sum}");
-                if !dest.exists(&blob).await? {
-                    dest.put(&blob, &contents).await?;
+                if !dest.exists(&blob).await?
+                    && !copy_blob(&instance.files, &key, dest, &blob, &sum).await?
+                {
+                    // Changed or gone between summing and copying.
+                    skipped.push(key);
+                    continue;
                 }
-                let size = contents.len() as u64;
                 if known.get(&key).map(|(s, h)| (*s, h.as_str())) != Some((size, sum.as_str())) {
                     let mut t = store.begin().await?;
                     t.execute(

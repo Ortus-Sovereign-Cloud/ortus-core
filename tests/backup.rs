@@ -409,3 +409,67 @@ fn table_names_in_a_backup_are_never_trusted() {
     std::fs::write(&path, text).unwrap();
     assert!(message(backup::check(&b, &schemas())).contains("not a table or column name"));
 }
+
+/// Tables longer than a page and files longer than a chunk come back
+/// whole: a backup reads both a part at a time.
+fn big_round_trip(from: Shape, to: Shape) {
+    let store = from.store.as_ref();
+    block_on(async {
+        ortus_core::storage::install(store, &schemas(), 1)
+            .await
+            .unwrap();
+        let mut tx = store.begin().await.unwrap();
+        for id in 0..1234i64 {
+            tx.execute(
+                "INSERT INTO test_replies (id, parent) VALUES ($1, NULL)",
+                &[id.into()],
+            )
+            .await
+            .unwrap();
+        }
+        tx.commit().await.unwrap();
+    });
+    let big: Vec<u8> = (0..8 * 1024 * 1024 + 5).map(|i| (i % 251) as u8).collect();
+    from.files.put("drive/big/scan.tiff", &big).unwrap();
+    let dir = common::temp_dir();
+    let target = dir.0.join("backup");
+    let manifest = block_on(backup::backup(store, from.files.as_async(), &target, 42)).unwrap();
+    let replies = manifest
+        .tables
+        .iter()
+        .find(|t| t.name == "test_replies")
+        .unwrap();
+    assert_eq!(1234, replies.rows);
+    assert_eq!(big.len() as u64, manifest.files.bytes);
+    let checked = backup::check(&target, &schemas()).unwrap();
+    block_on(backup::restore(
+        &checked,
+        &schemas(),
+        to.store.as_ref(),
+        to.files.as_async(),
+        43,
+    ))
+    .unwrap();
+    let ids: Vec<i64> = block_on(
+        to.store
+            .query("SELECT id FROM test_replies ORDER BY id", &[]),
+    )
+    .unwrap()
+    .iter()
+    .filter_map(|r| r.int(0))
+    .collect();
+    assert_eq!((0..1234).collect::<Vec<i64>>(), ids);
+    assert_eq!(Some(big), to.files.get("drive/big/scan.tiff").unwrap());
+}
+
+#[test]
+fn big_tables_and_files_on_sqlite_and_a_directory() {
+    big_round_trip(sqlite_local().unwrap(), sqlite_local().unwrap());
+}
+
+#[test]
+fn big_tables_and_files_on_postgres_and_s3() {
+    if let (Some(from), Some(to)) = (postgres_s3(), sqlite_local()) {
+        big_round_trip(from, to);
+    }
+}
