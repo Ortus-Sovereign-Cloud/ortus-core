@@ -374,6 +374,34 @@ export class OrtusShell extends LitElement {
     this.disconnected = navigator.onLine === false;
   };
   @state() private languageOpen = false;
+  @state() private accountOpen = false;
+
+  /** A menu that opens puts focus on its first item (or the checked one). */
+  private menuToggle(event: ToggleEvent, open: (value: boolean) => void): void {
+    open(event.newState === "open");
+    const menu = event.target as HTMLElement;
+    if (event.newState !== "open") {
+      // Closed with focus inside it (Escape): focus goes back to its button.
+      requestAnimationFrame(() => {
+        let a = document.activeElement;
+        while (a?.shadowRoot?.activeElement) a = a.shadowRoot.activeElement;
+        if (!a || a === document.body || menu.contains(a)) this.renderRoot.querySelector<HTMLElement>(`[popovertarget="${menu.id}"]`)?.focus();
+      });
+      return;
+    }
+    const items = [...menu.querySelectorAll<HTMLElement>('[role^="menuitem"]')];
+    requestAnimationFrame(() => (items.find((i) => i.getAttribute("aria-checked") === "true") ?? items[0])?.focus());
+  }
+
+  /** Arrow keys, Home and End move between a menu's items. */
+  private menuKeys(event: KeyboardEvent): void {
+    const items = [...(event.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role^="menuitem"]')].filter((i) => i.offsetParent !== null);
+    const at = items.indexOf(event.composedPath()[0] as HTMLElement);
+    const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[event.key];
+    if (to === undefined || !items.length) return;
+    event.preventDefault();
+    items[(to + items.length) % items.length]?.focus();
+  }
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -466,12 +494,20 @@ export class OrtusShell extends LitElement {
                 class="item"
                 popovertarget="account"
                 aria-haspopup="menu"
+                aria-expanded=${this.accountOpen ? "true" : "false"}
                 aria-label=${t(this.localize, "account.menu")}
                 aria-current=${location.pathname.startsWith("/settings") ? "page" : nothing}
               >
                 <ortus-avatar .name=${this.me.name} .user=${this.me.id}></ortus-avatar>
               </button>
-              <div id="account" popover role="menu" aria-label=${t(this.localize, "account.menu")}>
+              <div
+                id="account"
+                popover
+                role="menu"
+                aria-label=${t(this.localize, "account.menu")}
+                @toggle=${(event: ToggleEvent) => this.menuToggle(event, (v) => (this.accountOpen = v))}
+                @keydown=${this.menuKeys}
+              >
                 <div class="who">
                   <ortus-avatar size="48" radius="14" .name=${this.me.name} .user=${this.me.id}></ortus-avatar>
                   <div>
@@ -503,7 +539,7 @@ export class OrtusShell extends LitElement {
           <button class="item" popovertarget="languages" aria-haspopup="menu" aria-expanded=${this.languageOpen ? "true" : "false"} aria-label=${t(this.localize, "language.label")}>
             <span class="code" aria-hidden="true">${lang}</span>
           </button>
-          <div id="languages" popover role="menu" aria-label=${t(this.localize, "language.label")} @toggle=${(event: ToggleEvent) => (this.languageOpen = event.newState === "open")}>
+          <div id="languages" popover role="menu" aria-label=${t(this.localize, "language.label")} @toggle=${(event: ToggleEvent) => this.menuToggle(event, (v) => (this.languageOpen = v))} @keydown=${this.menuKeys}>
             ${LOCALES.map(
               (locale) => html`
                 <button role="menuitemradio" aria-checked=${locale.code === lang ? "true" : "false"} lang=${locale.code} dir=${locale.dir} @click=${() => this.choose(locale.code)}>

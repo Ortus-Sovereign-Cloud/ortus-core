@@ -209,6 +209,27 @@ test("the keyboard reaches everything, starting with a skip link", async ({ page
   await expect(page.getByRole("link", { name: en["shell.home"] })).toBeFocused();
 });
 
+test("the account menu works by keyboard", async ({ page }) => {
+  await withApps(page);
+  await page.goto("/apps");
+  const button = page.getByRole("button", { name: en["account.menu"] });
+  await button.focus();
+  await page.keyboard.press("Enter");
+  await expect(button).toHaveAttribute("aria-expanded", "true");
+  const menu = page.getByRole("menu", { name: en["account.menu"] });
+  const items = menu.getByRole("menuitem");
+  await expect(items.first()).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(items.nth(1)).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");
+  await expect(items.last()).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(button).toHaveAttribute("aria-expanded", "false");
+  await expect(button).toBeFocused();
+});
+
 test("it fits a phone-width window without sideways scrolling", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await withApps(page);
