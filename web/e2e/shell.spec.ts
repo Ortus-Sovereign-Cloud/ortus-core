@@ -239,6 +239,19 @@ test("it fits a phone-width window without sideways scrolling", async ({ page })
   await page.screenshot({ path: "test-results/screens/shell-en-phone.png" });
 });
 
+test("at 320 px (WCAG reflow) the bar holds the current app too, without sideways scrolling", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 640 });
+  await withApps(page);
+  await page.route("**/assets/apps/tasks/app.js", (route) => route.fulfill({ body: TASKS_APP, contentType: "text/javascript" }));
+  // Tasks is past the bar's first four apps: it shows there while open.
+  await page.goto("/tasks");
+  const nav = page.getByRole("navigation", { name: en["shell.apps"] });
+  await expect(nav.getByRole("link", { name: "Tasks" })).toBeVisible();
+  const account = nav.getByRole("button", { name: en["account.menu"] });
+  await expect(account).toBeInViewport({ ratio: 1 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+});
+
 test.describe("an address that belongs to no installed app", () => {
   for (const locale of LOCALES) {
     test(`says the app is not installed, in ${locale.name} (${locale.code})`, async ({ page }) => {

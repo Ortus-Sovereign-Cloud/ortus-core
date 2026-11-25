@@ -330,6 +330,12 @@ export class OrtusShell extends LitElement {
         inset-inline-start: 8px;
       }
     }
+    /* 320 px (a small phone, or 200% zoom): eight places still fit. */
+    @media (max-width: 359px) {
+      .item {
+        min-inline-size: 36px;
+      }
+    }
     .missing {
       max-inline-size: 520px;
       margin-block: 120px;
