@@ -4,6 +4,7 @@ import { session, setupNeeded, site, type Me } from "../api.js";
 import { startPreferences } from "../preferences.js";
 import "./ortus-accept.js";
 import "./ortus-relay.js";
+import "./ortus-web-ticket.js";
 import "./ortus-setup.js";
 import "./ortus-shell.js";
 import "./ortus-sign-in.js";
@@ -23,6 +24,7 @@ type View =
   | { kind: "app"; me: Me }
   | { kind: "accept" }
   | { kind: "relay" }
+  | { kind: "web-ticket" }
   | { kind: "public"; element: HTMLElement }
   | { kind: "failed" };
 
@@ -52,6 +54,11 @@ export class OrtusRoot extends LitElement {
     // The shared app link of an invitation, when the app did not take it.
     if (location.pathname === "/i") {
       this.view = { kind: "relay" };
+      return;
+    }
+    // The phone's way into a web page: signed in only on the person's yes.
+    if (location.pathname === "/session/web") {
+      this.view = { kind: "web-ticket" };
       return;
     }
     // Pages anyone may read, signed in or not.
@@ -131,6 +138,8 @@ export class OrtusRoot extends LitElement {
         return html`<ortus-accept></ortus-accept>`;
       case "relay":
         return html`<ortus-relay></ortus-relay>`;
+      case "web-ticket":
+        return html`<ortus-web-ticket></ortus-web-ticket>`;
       case "website":
         return html`<ortus-website
           .signupOpen=${this.view.signupOpen}

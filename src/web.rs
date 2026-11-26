@@ -40,6 +40,8 @@ pub const SCREENS: &[&str] = &[
     "/welcome",
     // The shared app link of an invitation (app_links).
     "/i",
+    // The phone's way into a web page (auth::web_ticket).
+    "/session/web",
     "/apps",
     "/settings",
     "/admin",

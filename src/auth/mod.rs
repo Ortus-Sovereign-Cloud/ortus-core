@@ -27,6 +27,7 @@ pub mod sessions;
 pub mod setup;
 pub mod signup;
 pub mod step_up;
+pub mod web_ticket;
 pub mod webauthn;
 
 use std::sync::Arc;

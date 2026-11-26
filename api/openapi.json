@@ -3543,6 +3543,48 @@
         ]
       }
     },
+    "/api/v1/me/web-ticket": {
+      "post": {
+        "description": "For anyone signed in.",
+        "operationId": "makeWebTicket",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "A ticket that signs the web in as you, once, within a minute: {next} (a path); answers {url} to open.",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
     "/api/v1/me/welcome": {
       "get": {
         "description": "For anyone signed in.",
@@ -4555,6 +4597,78 @@
         "summary": "End this session and remove its cookie.",
         "tags": [
           "accounts"
+        ]
+      }
+    },
+    "/api/v1/session/web-ticket": {
+      "post": {
+        "operationId": "useWebTicket",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "summary": "Trades a web ticket for a web session, once: {ticket}.",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/session/web-ticket/whose": {
+      "post": {
+        "operationId": "webTicketWhose",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Any error, in the common error format."
+          }
+        },
+        "summary": "Whose a web ticket is, without using it: {ticket}.",
+        "tags": [
+          "sessions"
         ]
       }
     },
